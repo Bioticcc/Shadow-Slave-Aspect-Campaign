@@ -61,6 +61,9 @@ export function CharacterCard({ character }: { character: Character }) {
             <p className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
               {character.rank}
             </p>
+            <p className="text-xs font-bold text-blue-400" data-testid={`text-class-${character.id}`}>
+              {character.soulClass || "Beast"}
+            </p>
           </div>
 
           <div className="w-full pt-4 border-t border-white/10" onClick={e => e.stopPropagation()}>

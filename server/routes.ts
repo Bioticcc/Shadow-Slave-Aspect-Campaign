@@ -94,6 +94,10 @@ export async function registerRoutes(
       rank: "Awakened",
       soulCore: "Dormant",
       soulFragments: 150,
+      soulClass: "Beast",
+      totalSoulFragments: 150,
+      currentEssence: 10,
+      maxEssence: 20,
       memories: [
         { name: "Weaver's Mask", description: "A mask that hides the wearer's face and fate.", effect: "Conceals True Name from divinations." }
       ],

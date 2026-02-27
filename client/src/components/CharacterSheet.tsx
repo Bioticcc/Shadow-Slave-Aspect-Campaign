@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { type Character } from "@shared/schema";
+import { type Character, getMaxFragmentsForClass, computeClassUp, getEssenceMax, CLASS_TIERS, getClassTierIndex } from "@shared/schema";
 import { useUpdateCharacter, useDeleteCharacter } from "@/hooks/use-characters";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2 } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
 import {
@@ -43,11 +43,9 @@ export function CharacterSheet({
   const [editData, setEditData] = useState<Partial<Character>>(character);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const updateChar = useUpdateCharacter();
-  const deleteChar = useUpdateCharacter(); // I will check the actual hook name in use-characters.ts
-  // Assuming useDeleteCharacter exists based on the codebase structure
+  const deleteChar = useUpdateCharacter();
   const { mutate: performDelete } = useDeleteCharacter(); 
 
-  // Reset edit data when opened or character changes
   useEffect(() => {
     if (open) {
       setEditData(character);
@@ -57,7 +55,22 @@ export function CharacterSheet({
   }, [open, character]);
 
   const handleSave = () => {
-    updateChar.mutate({ id: character.id, updates: editData }, {
+    const data = { ...editData };
+    const currentClass = data.soulClass || "Beast";
+    const fragments = data.soulFragments ?? 0;
+    const oldFragments = character.soulFragments ?? 0;
+    const addedFragments = Math.max(0, fragments - oldFragments);
+    const newTotal = (character.totalSoulFragments ?? 0) + addedFragments;
+    data.totalSoulFragments = newTotal;
+    data.maxEssence = getEssenceMax(newTotal);
+
+    const result = computeClassUp(currentClass, fragments, newTotal);
+    data.soulFragments = result.newFragments;
+    data.soulClass = result.newClass;
+    data.totalSoulFragments = result.newTotalFragments;
+    data.maxEssence = result.newMaxEssence;
+
+    updateChar.mutate({ id: character.id, updates: data }, {
       onSuccess: () => setIsEditing(false)
     });
   };
@@ -81,6 +94,29 @@ export function CharacterSheet({
     updateChar.mutate({ id: character.id, updates });
   };
 
+  const handleFragmentChange = (delta: number) => {
+    const currentClass = character.soulClass || "Beast";
+    const maxFrag = getMaxFragmentsForClass(currentClass);
+    const newFragments = Math.max(0, Math.min(character.soulFragments + delta, maxFrag));
+    const addedFragments = newFragments - character.soulFragments;
+    const newTotal = (character.totalSoulFragments || 0) + Math.max(0, addedFragments);
+
+    const result = computeClassUp(currentClass, newFragments, newTotal);
+
+    const updates: Partial<Character> = {
+      soulFragments: result.newFragments,
+      soulClass: result.newClass,
+      totalSoulFragments: result.newTotalFragments,
+      maxEssence: result.newMaxEssence,
+    };
+
+    if (result.classedUp) {
+      updates.currentEssence = Math.min(character.currentEssence ?? 0, result.newMaxEssence);
+    }
+
+    instantUpdate(updates);
+  };
+
   const handleDelete = () => {
     if (deleteConfirm === character.name) {
       performDelete(character.id, {
@@ -90,6 +126,11 @@ export function CharacterSheet({
       });
     }
   };
+
+  const currentClass = character.soulClass || "Beast";
+  const maxFragments = getMaxFragmentsForClass(currentClass);
+  const currentTierIdx = getClassTierIndex(currentClass);
+  const isMaxClass = currentTierIdx >= CLASS_TIERS.length - 1;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -192,6 +233,7 @@ export function CharacterSheet({
                     className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
                     onClick={() => instantUpdate({ currentHealth: Math.max(0, character.currentHealth - 1) })}
                     disabled={isEditing || character.currentHealth <= 0}
+                    data-testid="button-health-minus"
                   >
                     <Minus className="w-4 h-4 mr-1" /> DMG
                   </Button>
@@ -200,8 +242,44 @@ export function CharacterSheet({
                     className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
                     onClick={() => instantUpdate({ currentHealth: Math.min(character.maxHealth, character.currentHealth + 1) })}
                     disabled={isEditing || character.currentHealth >= character.maxHealth}
+                    data-testid="button-health-plus"
                   >
                     <Plus className="w-4 h-4 mr-1" /> HEAL
+                  </Button>
+                </div>
+              </div>
+
+              {/* Essence Block */}
+              <div className="bg-black/30 rounded-xl p-5 border border-white/5 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 blur-[50px] pointer-events-none" />
+                <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
+                  <Droplets className="w-4 h-4 text-violet-400" /> Essence
+                </h4>
+                
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-3xl font-display font-bold text-violet-200">
+                    {character.currentEssence ?? 10} <span className="text-muted-foreground text-xl">/ {character.maxEssence ?? 10}</span>
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+                    onClick={() => instantUpdate({ currentEssence: Math.max(0, (character.currentEssence ?? 0) - 1) })}
+                    disabled={isEditing || (character.currentEssence ?? 0) <= 0}
+                    data-testid="button-essence-minus"
+                  >
+                    <Minus className="w-4 h-4 mr-1" /> USE
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+                    onClick={() => instantUpdate({ currentEssence: Math.min((character.maxEssence ?? 10), (character.currentEssence ?? 0) + 1) })}
+                    disabled={isEditing || (character.currentEssence ?? 0) >= (character.maxEssence ?? 10)}
+                    data-testid="button-essence-plus"
+                  >
+                    <Plus className="w-4 h-4 mr-1" /> RESTORE
                   </Button>
                 </div>
               </div>
@@ -213,33 +291,60 @@ export function CharacterSheet({
                   <Gem className="w-4 h-4 text-blue-400" /> Soul Fragments
                 </h4>
                 
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-3xl font-display font-bold text-blue-100">
-                    {character.soulFragments} <span className="text-muted-foreground text-sm font-sans font-normal">/ 1000</span>
-                  </span>
+                <div className="flex items-center justify-between mb-2">
+                  {isEditing ? (
+                    <span className="text-3xl font-display font-bold text-blue-100 flex items-center gap-2">
+                      <Input 
+                        type="number" 
+                        value={editData.soulFragments} 
+                        onChange={e => {
+                          const val = parseInt(e.target.value) || 0;
+                          const max = getMaxFragmentsForClass(editData.soulClass || "Beast");
+                          setEditData({...editData, soulFragments: Math.max(0, Math.min(val, max))});
+                        }}
+                        className="w-24 inline-block h-10 px-2 text-center text-2xl"
+                        data-testid="input-soul-fragments"
+                      />
+                      <span className="text-muted-foreground text-sm font-sans font-normal">/ {maxFragments}</span>
+                    </span>
+                  ) : (
+                    <span className="text-3xl font-display font-bold text-blue-100">
+                      {character.soulFragments} <span className="text-muted-foreground text-sm font-sans font-normal">/ {maxFragments}</span>
+                    </span>
+                  )}
                 </div>
+
+                <p className="text-lg font-display font-bold text-blue-400 mb-4" data-testid="text-soul-class">
+                  {currentClass}
+                  {isMaxClass && character.soulFragments >= maxFragments && (
+                    <span className="text-xs text-muted-foreground font-sans font-normal ml-2">(Max Class)</span>
+                  )}
+                </p>
 
                 <div className="flex gap-2">
                   <Button 
                     variant="outline" 
                     size="sm"
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
-                    onClick={() => instantUpdate({ soulFragments: Math.max(0, character.soulFragments - 1) })}
+                    onClick={() => handleFragmentChange(-1)}
                     disabled={isEditing || character.soulFragments <= 0}
+                    data-testid="button-fragments-minus1"
                   >- 1</Button>
                   <Button 
                     variant="outline" 
                     size="sm"
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
-                    onClick={() => instantUpdate({ soulFragments: character.soulFragments + 1 })}
-                    disabled={isEditing}
+                    onClick={() => handleFragmentChange(1)}
+                    disabled={isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
+                    data-testid="button-fragments-plus1"
                   >+ 1</Button>
                   <Button 
                     variant="outline" 
                     size="sm"
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
-                    onClick={() => instantUpdate({ soulFragments: character.soulFragments + 10 })}
-                    disabled={isEditing}
+                    onClick={() => handleFragmentChange(10)}
+                    disabled={isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
+                    data-testid="button-fragments-plus10"
                   >+ 10</Button>
                 </div>
               </div>
