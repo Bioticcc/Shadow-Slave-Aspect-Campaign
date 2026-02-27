@@ -146,9 +146,16 @@ export function normalizeMemory(m: any): Memory {
 
 export const WS_EVENTS = {
   UPDATE_CHARACTER: 'update-character',
+  DICE_ROLL: 'dice-roll',
 } as const;
 
+export type DiceRollPayload = {
+  user: string;
+  results: { die: string; sides: number; rolls: number[]; subtotal: number }[];
+  total: number;
+};
+
 export interface WsMessage<T = unknown> {
-  type: keyof typeof WS_EVENTS;
+  type: string;
   payload: T;
 }

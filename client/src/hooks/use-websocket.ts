@@ -1,7 +1,25 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, WS_EVENTS } from "@shared/routes";
 import { type CharacterListResponse } from "@shared/routes";
+import { type DiceRollPayload } from "@shared/schema";
+
+type DiceRollListener = (payload: DiceRollPayload) => void;
+
+const diceRollListeners = new Set<DiceRollListener>();
+
+export function onDiceRoll(listener: DiceRollListener) {
+  diceRollListeners.add(listener);
+  return () => { diceRollListeners.delete(listener); };
+}
+
+let sharedWs: WebSocket | null = null;
+
+export function sendWsMessage(msg: unknown) {
+  if (sharedWs && sharedWs.readyState === WebSocket.OPEN) {
+    sharedWs.send(JSON.stringify(msg));
+  }
+}
 
 export function useWebSocket() {
   const [connected, setConnected] = useState(false);
@@ -17,6 +35,7 @@ export function useWebSocket() {
     const connect = () => {
       try {
         wsRef.current = new WebSocket(url);
+        sharedWs = wsRef.current;
         
         wsRef.current.onopen = () => {
           console.log('[WS] Connected');
@@ -26,6 +45,7 @@ export function useWebSocket() {
         wsRef.current.onclose = () => {
           console.log('[WS] Disconnected, reconnecting...');
           setConnected(false);
+          sharedWs = null;
           reconnectTimeout = setTimeout(connect, 3000);
         };
         
@@ -38,7 +58,6 @@ export function useWebSocket() {
             const { type, payload } = JSON.parse(e.data);
             
             if (type === WS_EVENTS.UPDATE_CHARACTER) {
-              // Optimistically update the character in the list cache
               queryClient.setQueryData<CharacterListResponse>(
                 [api.characters.list.path],
                 (old) => {
@@ -47,11 +66,14 @@ export function useWebSocket() {
                 }
               );
               
-              // Also update individual character cache if it exists
               queryClient.setQueryData(
                 [api.characters.get.path, payload.id],
                 payload
               );
+            }
+
+            if (type === WS_EVENTS.DICE_ROLL) {
+              diceRollListeners.forEach(fn => fn(payload as DiceRollPayload));
             }
           } catch (err) {
             console.error('[WS] Failed to parse message', err);
@@ -67,6 +89,7 @@ export function useWebSocket() {
 
     return () => {
       clearTimeout(reconnectTimeout);
+      sharedWs = null;
       if (wsRef.current) {
         wsRef.current.close();
       }

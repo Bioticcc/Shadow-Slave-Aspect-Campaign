@@ -25,6 +25,21 @@ export async function registerRoutes(
 
   wss.on('connection', (ws) => {
     console.log('Client connected');
+
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === WS_EVENTS.DICE_ROLL) {
+          const outMsg = JSON.stringify(msg);
+          wss.clients.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(outMsg);
+            }
+          });
+        }
+      } catch (e) {}
+    });
+
     ws.on('close', () => {
       console.log('Client disconnected');
     });
