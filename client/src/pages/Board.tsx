@@ -5,6 +5,7 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { CharacterCard } from "@/components/CharacterCard";
 import { CharacterSheet } from "@/components/CharacterSheet";
 import { CreateCharacterDialog } from "@/components/CreateCharacterDialog";
+import { DiceRoller } from "@/components/DiceRoller";
 import { LogoutButton } from "@/components/LoginGuard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
@@ -226,6 +227,7 @@ export default function Board() {
           )}
         </div>
       )}
+      <DiceRoller />
     </div>
   );
 }
