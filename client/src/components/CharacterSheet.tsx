@@ -336,6 +336,42 @@ export function CharacterSheet({
                     ) : <p className="text-sm text-muted-foreground italic">No abilities manifested.</p>}
                   </div>
                 )}
+
+                <div className="mt-8 pt-6 border-t border-destructive/20">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-destructive/80 flex items-center gap-2 mb-3">
+                    <Shield className="w-4 h-4" /> Flaw
+                  </h4>
+                  {isEditing ? (
+                    <div className="space-y-3 bg-destructive/5 p-4 rounded-lg border border-destructive/20">
+                      <Input 
+                        value={editData.flaw?.name} 
+                        onChange={e => setEditData({...editData, flaw: {...(editData.flaw || {name: "", description: "", effect: ""}), name: e.target.value}})}
+                        className="bg-black/50 border-destructive/30"
+                        placeholder="Flaw Name"
+                      />
+                      <Textarea 
+                        value={editData.flaw?.description} 
+                        onChange={e => setEditData({...editData, flaw: {...(editData.flaw || {name: "", description: "", effect: ""}), description: e.target.value}})}
+                        className="bg-black/50 border-destructive/30 min-h-[80px]"
+                        placeholder="Flaw Description"
+                      />
+                      <Input 
+                        value={editData.flaw?.effect} 
+                        onChange={e => setEditData({...editData, flaw: {...(editData.flaw || {name: "", description: "", effect: ""}), effect: e.target.value}})}
+                        className="bg-black/50 border-destructive/30"
+                        placeholder="Flaw Effect"
+                      />
+                    </div>
+                  ) : (
+                    character.flaw?.name ? (
+                      <TraitPopup trait={character.flaw}>
+                        <Button variant="outline" className="bg-destructive/10 border-destructive/30 hover:border-destructive/50 text-destructive hover:bg-destructive/20 transition-all">
+                          {character.flaw.name}
+                        </Button>
+                      </TraitPopup>
+                    ) : <p className="text-sm text-muted-foreground italic">No flaw identified.</p>
+                  )}
+                </div>
               </div>
 
               {/* Attributes & Memories Grid */}
