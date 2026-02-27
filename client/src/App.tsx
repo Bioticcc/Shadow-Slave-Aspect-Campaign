@@ -5,11 +5,16 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Board from "@/pages/Board";
+import { LoginGuard } from "@/components/LoginGuard";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Board}/>
+      <Route path="/">
+        <LoginGuard>
+          <Board />
+        </LoginGuard>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
