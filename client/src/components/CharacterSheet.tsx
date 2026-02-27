@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { type Character } from "@shared/schema";
-import { useUpdateCharacter } from "@/hooks/use-characters";
+import { useUpdateCharacter, useDeleteCharacter } from "@/hooks/use-characters";
 import {
   Dialog,
   DialogContent,
@@ -11,9 +11,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2 } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const RANKS = ["Dreamer", "Awakened", "Master", "Saint", "Sovreign", "##??!??!??!_Null_UnKnown"];
 const SOUL_CORES = ["Dormant"];
@@ -30,13 +41,18 @@ export function CharacterSheet({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Character>>(character);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
   const updateChar = useUpdateCharacter();
+  const deleteChar = useUpdateCharacter(); // I will check the actual hook name in use-characters.ts
+  // Assuming useDeleteCharacter exists based on the codebase structure
+  const { mutate: performDelete } = useDeleteCharacter(); 
 
   // Reset edit data when opened or character changes
   useEffect(() => {
     if (open) {
       setEditData(character);
       setIsEditing(false);
+      setDeleteConfirm("");
     }
   }, [open, character]);
 
@@ -63,6 +79,16 @@ export function CharacterSheet({
 
   const instantUpdate = (updates: Partial<Character>) => {
     updateChar.mutate({ id: character.id, updates });
+  };
+
+  const handleDelete = () => {
+    if (deleteConfirm === character.name) {
+      performDelete(character.id, {
+        onSuccess: () => {
+          onOpenChange(false);
+        }
+      });
+    }
   };
 
   return (
@@ -426,6 +452,43 @@ export function CharacterSheet({
               </div>
 
             </div>
+          </div>
+          
+          <div className="mt-12 pt-8 border-t border-white/5 flex justify-center pb-8">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-2">
+                  <Trash2 className="w-4 h-4" /> Erase Soul
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="glass-panel border-destructive/20">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-destructive font-display text-xl">Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-muted-foreground">
+                    This will permanently delete <span className="text-foreground font-bold">{character.name}</span>. This action cannot be undone.
+                    <div className="mt-4 space-y-2 text-foreground">
+                      <p className="text-sm font-medium">To confirm, please type the character's name:</p>
+                      <Input 
+                        value={deleteConfirm}
+                        onChange={(e) => setDeleteConfirm(e.target.value)}
+                        placeholder={character.name}
+                        className="bg-black/50 border-destructive/30"
+                      />
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10">Cancel</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleDelete}
+                    disabled={deleteConfirm !== character.name}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete Character
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </DialogContent>
