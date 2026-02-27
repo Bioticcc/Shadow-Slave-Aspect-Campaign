@@ -97,25 +97,26 @@ export function CharacterSheet({
             </div>
             <div>
               <DialogTitle className="font-display text-3xl font-bold rank-gradient text-glow">
-              {isEditing ? (
-                <Input 
-                  value={editData.name} 
-                  onChange={e => setEditData({...editData, name: e.target.value})}
-                  className="text-2xl font-display bg-black/50 border-primary/50 w-[300px]"
-                />
-              ) : character.name}
-            </DialogTitle>
-            <p className="text-sm font-medium text-muted-foreground mt-1 uppercase tracking-widest flex items-center gap-2">
-              <Star className="w-3 h-3 text-primary" />
-              {isEditing ? (
-                <Input 
-                  value={editData.trueName} 
-                  onChange={e => setEditData({...editData, trueName: e.target.value})}
-                  className="h-7 text-xs bg-black/50 border-primary/30 inline-block w-[200px]"
-                  placeholder="True Name"
-                />
-              ) : character.trueName}
-            </p>
+                {isEditing ? (
+                  <Input 
+                    value={editData.name} 
+                    onChange={e => setEditData({...editData, name: e.target.value})}
+                    className="text-2xl font-display bg-black/50 border-primary/50 w-[300px]"
+                  />
+                ) : character.name}
+              </DialogTitle>
+              <p className="text-sm font-medium text-muted-foreground mt-1 uppercase tracking-widest flex items-center gap-2">
+                <Star className="w-3 h-3 text-primary" />
+                {isEditing ? (
+                  <Input 
+                    value={editData.trueName} 
+                    onChange={e => setEditData({...editData, trueName: e.target.value})}
+                    className="h-7 text-xs bg-black/50 border-primary/30 inline-block w-[200px]"
+                    placeholder="True Name"
+                  />
+                ) : character.trueName}
+              </p>
+            </div>
           </div>
           
           <div className="flex items-center gap-4">
