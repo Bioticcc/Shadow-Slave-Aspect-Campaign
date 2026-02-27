@@ -90,13 +90,18 @@ export function CharacterSheet({
     const addedFragments = Math.max(0, fragments - oldFragments);
     const newTotal = (character.totalSoulFragments ?? 0) + addedFragments;
     data.totalSoulFragments = newTotal;
-    data.maxEssence = getEssenceMax(newTotal);
 
+    const oldMaxEssence = character.maxEssence ?? 10;
     const result = computeClassUp(currentClass, fragments, newTotal);
     data.soulFragments = result.newFragments;
     data.soulClass = result.newClass;
     data.totalSoulFragments = result.newTotalFragments;
     data.maxEssence = result.newMaxEssence;
+
+    const essenceGain = result.newMaxEssence - oldMaxEssence;
+    if (essenceGain > 0) {
+      data.currentEssence = (character.currentEssence ?? 0) + essenceGain;
+    }
 
     if (data.memories) {
       data.memories = (data.memories as any[]).map(normalizeMemory);
@@ -175,6 +180,7 @@ export function CharacterSheet({
 
     const result = computeClassUp(currentClass, newFragments, newTotal);
 
+    const oldMaxEssence = character.maxEssence ?? 10;
     const updates: Partial<Character> = {
       soulFragments: result.newFragments,
       soulClass: result.newClass,
@@ -182,8 +188,9 @@ export function CharacterSheet({
       maxEssence: result.newMaxEssence,
     };
 
-    if (result.classedUp) {
-      updates.currentEssence = Math.min(character.currentEssence ?? 0, result.newMaxEssence);
+    const essenceGain = result.newMaxEssence - oldMaxEssence;
+    if (essenceGain > 0) {
+      updates.currentEssence = (character.currentEssence ?? 0) + essenceGain;
     }
 
     instantUpdate(updates);
