@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useCreateCharacter } from "@/hooks/use-characters";
+import { useAuth } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 
 export function CreateCharacterDialog() {
+  const { currentUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [trueName, setTrueName] = useState("");
@@ -41,11 +43,11 @@ export function CreateCharacterDialog() {
       name,
       trueName,
       icon,
-      // Sending default required fields, backend schema handles most defaults
       rank: "Dreamer",
       soulCore: "Dormant",
       currentHealth: 8,
       maxHealth: 8,
+      owner: currentUser || "DM",
     }, {
       onSuccess: () => {
         setOpen(false);

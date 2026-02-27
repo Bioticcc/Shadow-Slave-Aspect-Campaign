@@ -33,11 +33,13 @@ const ASPECT_RANKS = ["Divine"];
 export function CharacterSheet({ 
   character, 
   open, 
-  onOpenChange 
+  onOpenChange,
+  canEdit = true
 }: { 
   character: Character;
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  canEdit?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Character>>(character);
@@ -191,14 +193,16 @@ export function CharacterSheet({
           </div>
           
           <div className="flex items-center gap-4">
-            {isEditing ? (
-              <Button onClick={handleSave} disabled={updateChar.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                <Save className="w-4 h-4 mr-2" /> {updateChar.isPending ? "Saving..." : "Save Changes"}
-              </Button>
-            ) : (
-              <Button variant="outline" onClick={() => setIsEditing(true)} className="border-primary/50 text-primary hover:bg-primary/10">
-                <Edit2 className="w-4 h-4 mr-2" /> Edit Sheet
-              </Button>
+            {canEdit && (
+              isEditing ? (
+                <Button onClick={handleSave} disabled={updateChar.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <Save className="w-4 h-4 mr-2" /> {updateChar.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={() => setIsEditing(true)} className="border-primary/50 text-primary hover:bg-primary/10">
+                  <Edit2 className="w-4 h-4 mr-2" /> Edit Sheet
+                </Button>
+              )
             )}
           </div>
         </DialogHeader>
@@ -232,7 +236,7 @@ export function CharacterSheet({
                     variant="outline" 
                     className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
                     onClick={() => instantUpdate({ currentHealth: Math.max(0, character.currentHealth - 1) })}
-                    disabled={isEditing || character.currentHealth <= 0}
+                    disabled={!canEdit || isEditing || character.currentHealth <= 0}
                     data-testid="button-health-minus"
                   >
                     <Minus className="w-4 h-4 mr-1" /> DMG
@@ -241,7 +245,7 @@ export function CharacterSheet({
                     variant="outline" 
                     className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
                     onClick={() => instantUpdate({ currentHealth: Math.min(character.maxHealth, character.currentHealth + 1) })}
-                    disabled={isEditing || character.currentHealth >= character.maxHealth}
+                    disabled={!canEdit || isEditing || character.currentHealth >= character.maxHealth}
                     data-testid="button-health-plus"
                   >
                     <Plus className="w-4 h-4 mr-1" /> HEAL
@@ -267,7 +271,7 @@ export function CharacterSheet({
                     variant="outline" 
                     className="flex-1 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
                     onClick={() => instantUpdate({ currentEssence: Math.max(0, (character.currentEssence ?? 0) - 1) })}
-                    disabled={isEditing || (character.currentEssence ?? 0) <= 0}
+                    disabled={!canEdit || isEditing || (character.currentEssence ?? 0) <= 0}
                     data-testid="button-essence-minus"
                   >
                     <Minus className="w-4 h-4 mr-1" /> USE
@@ -276,7 +280,7 @@ export function CharacterSheet({
                     variant="outline" 
                     className="flex-1 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
                     onClick={() => instantUpdate({ currentEssence: Math.min((character.maxEssence ?? 10), (character.currentEssence ?? 0) + 1) })}
-                    disabled={isEditing || (character.currentEssence ?? 0) >= (character.maxEssence ?? 10)}
+                    disabled={!canEdit || isEditing || (character.currentEssence ?? 0) >= (character.maxEssence ?? 10)}
                     data-testid="button-essence-plus"
                   >
                     <Plus className="w-4 h-4 mr-1" /> RESTORE
@@ -327,7 +331,7 @@ export function CharacterSheet({
                     size="sm"
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
                     onClick={() => handleFragmentChange(-1)}
-                    disabled={isEditing || character.soulFragments <= 0}
+                    disabled={!canEdit || isEditing || character.soulFragments <= 0}
                     data-testid="button-fragments-minus1"
                   >- 1</Button>
                   <Button 
@@ -335,7 +339,7 @@ export function CharacterSheet({
                     size="sm"
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
                     onClick={() => handleFragmentChange(1)}
-                    disabled={isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
+                    disabled={!canEdit || isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
                     data-testid="button-fragments-plus1"
                   >+ 1</Button>
                   <Button 
@@ -343,7 +347,7 @@ export function CharacterSheet({
                     size="sm"
                     className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
                     onClick={() => handleFragmentChange(10)}
-                    disabled={isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
+                    disabled={!canEdit || isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
                     data-testid="button-fragments-plus10"
                   >+ 10</Button>
                 </div>
@@ -568,7 +572,7 @@ export function CharacterSheet({
             </div>
           </div>
           
-          <div className="mt-12 pt-8 border-t border-white/5 flex justify-center pb-8">
+          {canEdit && <div className="mt-12 pt-8 border-t border-white/5 flex justify-center pb-8">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-2">
@@ -603,7 +607,7 @@ export function CharacterSheet({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          </div>
+          </div>}
         </div>
       </DialogContent>
     </Dialog>

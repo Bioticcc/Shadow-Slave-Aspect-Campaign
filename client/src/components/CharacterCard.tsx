@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { type Character } from "@shared/schema";
 import { useUpdateCharacter } from "@/hooks/use-characters";
+import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Minus, Plus, Shield, Droplets } from "lucide-react";
@@ -8,6 +9,7 @@ import { CharacterSheet } from "./CharacterSheet";
 import { motion } from "framer-motion";
 
 export function CharacterCard({ character }: { character: Character }) {
+  const { currentUser, isDM } = useAuth();
   const [sheetOpen, setSheetOpen] = useState(false);
   const updateChar = useUpdateCharacter();
 
@@ -59,6 +61,7 @@ export function CharacterCard({ character }: { character: Character }) {
   const essenceCurrent = character.currentEssence ?? 0;
   const essenceMax = character.maxEssence ?? 10;
   const essencePercent = essenceMax > 0 ? (essenceCurrent / essenceMax) * 100 : 0;
+  const canEdit = isDM || currentUser === character.owner;
 
   return (
     <>
@@ -115,7 +118,7 @@ export function CharacterCard({ character }: { character: Character }) {
                 size="sm" 
                 className="flex-1 bg-black/50 border-destructive/30 hover:bg-destructive/20 hover:text-destructive"
                 onClick={handleDamage}
-                disabled={character.currentHealth <= 0 || updateChar.isPending}
+                disabled={!canEdit || character.currentHealth <= 0 || updateChar.isPending}
                 data-testid={`button-card-dmg-${character.id}`}
               >
                 <Minus className="w-4 h-4" />
@@ -125,7 +128,7 @@ export function CharacterCard({ character }: { character: Character }) {
                 size="sm" 
                 className="flex-1 bg-black/50 border-emerald-500/30 hover:bg-emerald-500/20 hover:text-emerald-400"
                 onClick={handleHeal}
-                disabled={character.currentHealth >= character.maxHealth || updateChar.isPending}
+                disabled={!canEdit || character.currentHealth >= character.maxHealth || updateChar.isPending}
                 data-testid={`button-card-heal-${character.id}`}
               >
                 <Plus className="w-4 h-4" />
@@ -154,7 +157,7 @@ export function CharacterCard({ character }: { character: Character }) {
                 size="sm" 
                 className="flex-1 bg-black/50 border-violet-500/30 hover:bg-violet-500/20 hover:text-violet-400"
                 onClick={handleEssenceUse}
-                disabled={essenceCurrent <= 0 || updateChar.isPending}
+                disabled={!canEdit || essenceCurrent <= 0 || updateChar.isPending}
                 data-testid={`button-card-essence-use-${character.id}`}
               >
                 <Minus className="w-4 h-4" />
@@ -164,7 +167,7 @@ export function CharacterCard({ character }: { character: Character }) {
                 size="sm" 
                 className="flex-1 bg-black/50 border-violet-500/30 hover:bg-violet-500/20 hover:text-violet-400"
                 onClick={handleEssenceRestore}
-                disabled={essenceCurrent >= essenceMax || updateChar.isPending}
+                disabled={!canEdit || essenceCurrent >= essenceMax || updateChar.isPending}
                 data-testid={`button-card-essence-restore-${character.id}`}
               >
                 <Plus className="w-4 h-4" />
@@ -177,7 +180,8 @@ export function CharacterCard({ character }: { character: Character }) {
       <CharacterSheet 
         character={character} 
         open={sheetOpen} 
-        onOpenChange={setSheetOpen} 
+        onOpenChange={setSheetOpen}
+        canEdit={canEdit}
       />
     </>
   );

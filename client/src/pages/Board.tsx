@@ -1,21 +1,46 @@
 import { useState } from "react";
 import { useCharacters, useUpdateCharacter } from "@/hooks/use-characters";
+import { useAuth } from "@/lib/auth";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { CharacterCard } from "@/components/CharacterCard";
 import { CharacterSheet } from "@/components/CharacterSheet";
 import { CreateCharacterDialog } from "@/components/CreateCharacterDialog";
+import { LogoutButton } from "@/components/LoginGuard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { Wifi, WifiOff, LayoutGrid, List } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { type Character } from "@shared/schema";
+import { type Character, getTagColorForOwner } from "@shared/schema";
+
+const TAG_COLOR_MAP: Record<string, string> = {
+  cyan: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  pink: "bg-pink-500/20 text-pink-300 border-pink-500/30",
+  green: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  orange: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+  yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  gray: "bg-gray-500/20 text-gray-300 border-gray-500/30",
+};
+
+function OwnerTag({ owner }: { owner: string }) {
+  const color = getTagColorForOwner(owner);
+  const classes = TAG_COLOR_MAP[color] || TAG_COLOR_MAP.gray;
+  return (
+    <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${classes}`} data-testid={`tag-owner-${owner}`}>
+      {owner}
+    </span>
+  );
+}
 
 function CharacterListItem({ character }: { character: Character }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const updateChar = useUpdateCharacter();
+  const { currentUser, isDM } = useAuth();
   const isActive = (character.isActive ?? 1) === 1;
+  const canEdit = isDM || currentUser === character.owner;
+  const canToggle = isDM || currentUser === character.owner;
 
   const handleToggle = (checked: boolean) => {
+    if (!canToggle) return;
     updateChar.mutate({ id: character.id, updates: { isActive: checked ? 1 : 0 } });
   };
 
@@ -36,11 +61,14 @@ function CharacterListItem({ character }: { character: Character }) {
               </AvatarFallback>
             )}
           </Avatar>
-          <div>
-            <p className="font-display font-bold text-foreground group-hover:text-primary transition-colors">
-              {character.name}
-            </p>
-            <p className="text-xs text-muted-foreground">{character.aspect || "No Aspect"}</p>
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="font-display font-bold text-foreground group-hover:text-primary transition-colors">
+                {character.name}
+              </p>
+              <p className="text-xs text-muted-foreground">{character.aspect || "No Aspect"}</p>
+            </div>
+            <OwnerTag owner={character.owner || "DM"} />
           </div>
         </div>
 
@@ -51,6 +79,7 @@ function CharacterListItem({ character }: { character: Character }) {
           <Switch
             checked={isActive}
             onCheckedChange={handleToggle}
+            disabled={!canToggle}
             data-testid={`toggle-active-${character.id}`}
           />
         </div>
@@ -60,6 +89,7 @@ function CharacterListItem({ character }: { character: Character }) {
         character={character}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+        canEdit={canEdit}
       />
     </>
   );
@@ -68,6 +98,7 @@ function CharacterListItem({ character }: { character: Character }) {
 export default function Board() {
   const { data: characters, isLoading, error } = useCharacters();
   const { connected } = useWebSocket();
+  const { currentUser } = useAuth();
   const [tab, setTab] = useState<"board" | "list">("board");
 
   if (isLoading) {
@@ -111,7 +142,10 @@ export default function Board() {
           </div>
         </div>
         
-        <CreateCharacterDialog />
+        <div className="flex items-center gap-3">
+          <LogoutButton />
+          <CreateCharacterDialog />
+        </div>
       </header>
 
       <div className="flex gap-2 mb-8">

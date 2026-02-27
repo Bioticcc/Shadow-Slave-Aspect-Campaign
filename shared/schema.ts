@@ -88,6 +88,7 @@ export const characters = pgTable("characters", {
   aspectAbilityDescription: text("aspect_ability_description").notNull().default(""),
   flaw: json("flaw").$type<Trait>().notNull().default({ name: "", description: "", effect: "" }),
   isActive: integer("is_active").notNull().default(1),
+  owner: text("owner").notNull().default("DM"),
 });
 
 export const insertCharacterSchema = createInsertSchema(characters).omit({ id: true });
@@ -97,6 +98,25 @@ export type Character = typeof characters.$inferSelect;
 
 export type CreateCharacterRequest = InsertCharacter;
 export type UpdateCharacterRequest = Partial<InsertCharacter>;
+
+export const ACCOUNTS = [
+  { username: "Tien", password: "Cleric", tagColor: "cyan" },
+  { username: "Marlin", password: "Bard", tagColor: "pink" },
+  { username: "Nico", password: "Ranger", tagColor: "green" },
+  { username: "Ambrose", password: "Elantrian", tagColor: "orange" },
+  { username: "DM", password: "Wit", tagColor: "yellow" },
+] as const;
+
+export type AccountUsername = typeof ACCOUNTS[number]["username"];
+
+export function getAccountByUsername(username: string) {
+  return ACCOUNTS.find(a => a.username === username);
+}
+
+export function getTagColorForOwner(owner: string): string {
+  const account = ACCOUNTS.find(a => a.username === owner);
+  return account?.tagColor || "gray";
+}
 
 export const WS_EVENTS = {
   UPDATE_CHARACTER: 'update-character',
