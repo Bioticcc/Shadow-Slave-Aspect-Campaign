@@ -1,38 +1,46 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import {
+  characters,
+  type Character,
+  type InsertCharacter,
+  type UpdateCharacterRequest
+} from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getCharacters(): Promise<Character[]>;
+  getCharacter(id: number): Promise<Character | undefined>;
+  createCharacter(character: InsertCharacter): Promise<Character>;
+  updateCharacter(id: number, updates: UpdateCharacterRequest): Promise<Character>;
+  deleteCharacter(id: number): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getCharacters(): Promise<Character[]> {
+    return await db.select().from(characters);
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getCharacter(id: number): Promise<Character | undefined> {
+    const [character] = await db.select().from(characters).where(eq(characters.id, id));
+    return character;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async createCharacter(character: InsertCharacter): Promise<Character> {
+    const [newCharacter] = await db.insert(characters).values(character).returning();
+    return newCharacter;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async updateCharacter(id: number, updates: UpdateCharacterRequest): Promise<Character> {
+    const [updated] = await db.update(characters)
+      .set(updates)
+      .where(eq(characters.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCharacter(id: number): Promise<void> {
+    await db.delete(characters).where(eq(characters.id, id));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

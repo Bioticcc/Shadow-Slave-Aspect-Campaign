@@ -1,18 +1,44 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+type Trait = {
+  name: string;
+  description: string;
+  effect: string;
+};
+
+export const characters = pgTable("characters", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  currentHealth: integer("current_health").notNull().default(8),
+  maxHealth: integer("max_health").notNull().default(8),
+  trueName: text("true_name").notNull(),
+  rank: text("rank").notNull(), // "Dreamer", "Awakened", "Master", "Saint", "Sovreign", "##??!??!??!_Null_UnKnown"
+  soulCore: text("soul_core").notNull().default("Dormant"),
+  soulFragments: integer("soul_fragments").notNull().default(0),
+  memories: json("memories").$type<Trait[]>().notNull().default([]),
+  echoes: text("echoes").notNull().default(""),
+  attributes: json("attributes").$type<Trait[]>().notNull().default([]),
+  aspect: text("aspect").notNull().default(""),
+  aspectRank: text("aspect_rank").notNull().default("Divine"),
+  aspectAbilities: json("aspect_abilities").$type<Trait[]>().notNull().default([]),
+  aspectAbilityDescription: text("aspect_ability_description").notNull().default(""),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
+export const insertCharacterSchema = createInsertSchema(characters).omit({ id: true });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type InsertCharacter = z.infer<typeof insertCharacterSchema>;
+export type Character = typeof characters.$inferSelect;
+
+export type CreateCharacterRequest = InsertCharacter;
+export type UpdateCharacterRequest = Partial<InsertCharacter>;
+
+export const WS_EVENTS = {
+  UPDATE_CHARACTER: 'update-character',
+} as const;
+
+export interface WsMessage<T = unknown> {
+  type: keyof typeof WS_EVENTS;
+  payload: T;
+}
