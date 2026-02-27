@@ -31,7 +31,7 @@ export default function Board() {
       <header className="flex flex-col md:flex-row items-center justify-between gap-6 mb-12 border-b border-white/10 pb-8">
         <div>
           <h1 className="text-4xl md:text-5xl font-display font-bold text-glow text-primary tracking-wider uppercase">
-            The Nightmare <span className="text-foreground">Board</span>
+            Aspects <span className="text-foreground">Campaign</span>
           </h1>
           <div className="flex items-center gap-2 mt-2 text-sm">
             {connected ? (
