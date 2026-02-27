@@ -45,9 +45,13 @@ export function CharacterCard({ character }: { character: Character }) {
         
         <div className="relative z-10 p-6 flex flex-col items-center text-center space-y-4">
           <Avatar className="w-24 h-24 border-2 border-primary/50 shadow-lg shadow-primary/20 ring-4 ring-black">
-            <AvatarFallback className="bg-secondary font-display text-2xl text-primary">
-              {character.name.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
+            {character.icon ? (
+              <img src={character.icon} alt={character.name} className="w-full h-full object-cover" />
+            ) : (
+              <AvatarFallback className="bg-secondary font-display text-2xl text-primary">
+                {character.name.substring(0, 2).toUpperCase()}
+              </AvatarFallback>
+            )}
           </Avatar>
           
           <div className="space-y-1">

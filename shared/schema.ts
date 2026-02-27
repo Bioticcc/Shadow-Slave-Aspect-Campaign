@@ -11,6 +11,7 @@ type Trait = {
 export const characters = pgTable("characters", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  icon: text("icon"),
   currentHealth: integer("current_health").notNull().default(8),
   maxHealth: integer("max_health").notNull().default(8),
   trueName: text("true_name").notNull(),

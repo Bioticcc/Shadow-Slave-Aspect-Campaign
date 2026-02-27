@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
 
@@ -46,6 +46,17 @@ export function CharacterSheet({
     });
   };
 
+  const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditData({ ...editData, icon: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const instantUpdate = (updates: Partial<Character>) => {
     updateChar.mutate({ id: character.id, updates });
   };
@@ -56,8 +67,36 @@ export function CharacterSheet({
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
         
         <DialogHeader className="p-6 pb-2 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
-          <div>
-            <DialogTitle className="font-display text-3xl font-bold rank-gradient text-glow">
+          <div className="flex items-center gap-4">
+            <div className="relative group">
+              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-primary/30 bg-black/50">
+                {isEditing ? (
+                  editData.icon ? (
+                    <img src={editData.icon} alt="Icon" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-primary/30">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                  )
+                ) : (
+                  character.icon ? (
+                    <img src={character.icon} alt="Icon" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center font-display text-2xl text-primary/50">
+                      {character.name[0]}
+                    </div>
+                  )
+                )}
+              </div>
+              {isEditing && (
+                <label className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer rounded-full">
+                  <Upload className="w-5 h-5 text-white" />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleIconUpload} />
+                </label>
+              )}
+            </div>
+            <div>
+              <DialogTitle className="font-display text-3xl font-bold rank-gradient text-glow">
               {isEditing ? (
                 <Input 
                   value={editData.name} 

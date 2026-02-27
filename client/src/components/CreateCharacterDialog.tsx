@@ -15,8 +15,20 @@ export function CreateCharacterDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [trueName, setTrueName] = useState("");
+  const [icon, setIcon] = useState<string | null>(null);
   
   const createChar = useCreateCharacter();
+
+  const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setIcon(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleCreate = () => {
     if (!name.trim() || !trueName.trim()) return;
@@ -24,6 +36,7 @@ export function CreateCharacterDialog() {
     createChar.mutate({
       name,
       trueName,
+      icon,
       // Sending default required fields, backend schema handles most defaults
       rank: "Dreamer",
       soulCore: "Dormant",
@@ -70,6 +83,22 @@ export function CreateCharacterDialog() {
               onChange={e => setTrueName(e.target.value)}
               className="bg-black/50 border-white/10 focus-visible:ring-primary"
             />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Soul Icon</label>
+            <div className="flex items-center gap-4">
+              {icon && (
+                <div className="w-12 h-12 rounded-full overflow-hidden border border-primary/50">
+                  <img src={icon} alt="Preview" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <Input 
+                type="file"
+                accept="image/*"
+                onChange={handleIconUpload}
+                className="bg-black/50 border-white/10 focus-visible:ring-primary text-xs"
+              />
+            </div>
           </div>
           
           <Button 
