@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, X, ChevronDown, ChevronUp } from "lucide-react";
-import { type Memory, type MemoryType, MEMORY_TYPES } from "@shared/schema";
+import { type Memory, type MemoryType, type WeaponDamage, MEMORY_TYPES, DAMAGE_DICE } from "@shared/schema";
 
 interface MemoryEditorProps {
   memories: Memory[];
@@ -17,6 +17,63 @@ const TYPE_LABELS: Record<MemoryType, string> = {
   tool: "Tool",
   charm: "Charm",
 };
+
+const DEFAULT_WEAPON_DAMAGE: WeaponDamage = {
+  hitModifier: 0,
+  damageDie: "D6",
+  diceCount: 1,
+  damageModifier: 0,
+};
+
+function WeaponDamageEditor({ damage, onChange }: { damage: WeaponDamage; onChange: (d: WeaponDamage) => void }) {
+  return (
+    <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg space-y-2">
+      <h5 className="text-xs font-bold uppercase tracking-widest text-red-400">Weapon Damage</h5>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Hit Modifier</label>
+          <Input
+            type="number"
+            value={damage.hitModifier}
+            onChange={e => onChange({ ...damage, hitModifier: parseInt(e.target.value) || 0 })}
+            className="bg-black/50 h-8 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Damage Die</label>
+          <Select value={damage.damageDie} onValueChange={v => onChange({ ...damage, damageDie: v })}>
+            <SelectTrigger className="bg-black/50 border-white/10 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DAMAGE_DICE.map(d => (
+                <SelectItem key={d} value={d}>{d}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Dice Count</label>
+          <Input
+            type="number"
+            value={damage.diceCount}
+            onChange={e => onChange({ ...damage, diceCount: Math.max(1, parseInt(e.target.value) || 1) })}
+            className="bg-black/50 h-8 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Damage Modifier</label>
+          <Input
+            type="number"
+            value={damage.damageModifier}
+            onChange={e => onChange({ ...damage, damageModifier: parseInt(e.target.value) || 0 })}
+            className="bg-black/50 h-8 text-sm"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function MemoryEditor({ memories, onChange }: MemoryEditorProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -33,7 +90,11 @@ export function MemoryEditor({ memories, onChange }: MemoryEditorProps) {
 
   const handleAdd = () => {
     if (!newMemory.name.trim()) return;
-    onChange([...memories, { ...newMemory, currentDurability: newMemory.maxDurability }]);
+    const mem = { ...newMemory, currentDurability: newMemory.maxDurability };
+    if (mem.memoryType === "weapon" && !mem.weaponDamage) {
+      mem.weaponDamage = { ...DEFAULT_WEAPON_DAMAGE };
+    }
+    onChange([...memories, mem]);
     setNewMemory({
       name: "",
       description: "",
@@ -48,7 +109,14 @@ export function MemoryEditor({ memories, onChange }: MemoryEditorProps) {
 
   const handleUpdate = (index: number, updates: Partial<Memory>) => {
     const updated = [...memories];
-    updated[index] = { ...updated[index], ...updates };
+    const merged = { ...updated[index], ...updates };
+    if (updates.memoryType === "weapon" && !merged.weaponDamage) {
+      merged.weaponDamage = { ...DEFAULT_WEAPON_DAMAGE };
+    }
+    if (updates.memoryType && updates.memoryType !== "weapon") {
+      delete merged.weaponDamage;
+    }
+    updated[index] = merged;
     onChange(updated);
   };
 
@@ -135,6 +203,12 @@ export function MemoryEditor({ memories, onChange }: MemoryEditorProps) {
                     />
                   </div>
                 </div>
+                {mem.memoryType === "weapon" && mem.weaponDamage && (
+                  <WeaponDamageEditor
+                    damage={mem.weaponDamage}
+                    onChange={d => handleUpdate(idx, { weaponDamage: d })}
+                  />
+                )}
                 <Input
                   placeholder="Effect"
                   value={mem.effect}
@@ -167,7 +241,12 @@ export function MemoryEditor({ memories, onChange }: MemoryEditorProps) {
           <div className="flex gap-2">
             <Select
               value={newMemory.memoryType}
-              onValueChange={(v) => setNewMemory({ ...newMemory, memoryType: v as MemoryType })}
+              onValueChange={(v) => {
+                const updates: Partial<Memory> = { memoryType: v as MemoryType };
+                if (v === "weapon") updates.weaponDamage = { ...DEFAULT_WEAPON_DAMAGE };
+                else updates.weaponDamage = undefined;
+                setNewMemory({ ...newMemory, ...updates });
+              }}
             >
               <SelectTrigger className="bg-black/50 border-white/10 w-[130px]">
                 <SelectValue />
@@ -188,6 +267,12 @@ export function MemoryEditor({ memories, onChange }: MemoryEditorProps) {
               />
             </div>
           </div>
+          {newMemory.memoryType === "weapon" && newMemory.weaponDamage && (
+            <WeaponDamageEditor
+              damage={newMemory.weaponDamage}
+              onChange={d => setNewMemory({ ...newMemory, weaponDamage: d })}
+            />
+          )}
           <Input
             placeholder="Effect"
             value={newMemory.effect}

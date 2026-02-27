@@ -1,19 +1,29 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Dices, X, RotateCcw } from "lucide-react";
+import { Dices, X, RotateCcw, Triangle, Pentagon, Hexagon, Octagon, Diamond, Circle, Box } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { sendWsMessage, onDiceRoll } from "@/hooks/use-websocket";
 import { WS_EVENTS, type DiceRollPayload } from "@shared/schema";
 
+const DICE_ICONS: Record<string, typeof Dices> = {
+  D4: Triangle,
+  D6: Box,
+  D8: Diamond,
+  D10: Pentagon,
+  D12: Hexagon,
+  D20: Octagon,
+  D100: Circle,
+};
+
 const DICE_TYPES = [
-  { name: "D20", sides: 20, color: "from-amber-500 to-amber-700" },
-  { name: "D12", sides: 12, color: "from-purple-500 to-purple-700" },
-  { name: "D100", sides: 100, color: "from-rose-500 to-rose-700" },
-  { name: "D10", sides: 10, color: "from-blue-500 to-blue-700" },
-  { name: "D8", sides: 8, color: "from-emerald-500 to-emerald-700" },
-  { name: "D6", sides: 6, color: "from-cyan-500 to-cyan-700" },
-  { name: "D4", sides: 4, color: "from-pink-500 to-pink-700" },
+  { name: "D20", sides: 20 },
+  { name: "D12", sides: 12 },
+  { name: "D100", sides: 100 },
+  { name: "D10", sides: 10 },
+  { name: "D8", sides: 8 },
+  { name: "D6", sides: 6 },
+  { name: "D4", sides: 4 },
 ];
 
 type DiceSelection = Record<string, number>;
@@ -174,10 +184,9 @@ export function DiceRoller() {
                       key={dice.name}
                       className="flex items-center justify-between p-2 rounded-lg bg-black/30 border border-white/5"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className={`w-10 h-10 rounded-lg bg-gradient-to-br ${dice.color} flex items-center justify-center text-white font-bold text-xs shadow-lg`}>
-                          {dice.name}
-                        </span>
+                      <div className="flex items-center gap-3">
+                        {(() => { const Icon = DICE_ICONS[dice.name] || Dices; return <Icon className="w-5 h-5 text-muted-foreground" />; })()}
+                        <span className="text-sm font-bold text-foreground">{dice.name}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <Button

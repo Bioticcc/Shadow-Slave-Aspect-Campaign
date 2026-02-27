@@ -10,6 +10,13 @@ type Trait = {
 
 export type MemoryType = "armor" | "weapon" | "tool" | "charm";
 
+export type WeaponDamage = {
+  hitModifier: number;
+  damageDie: string;
+  diceCount: number;
+  damageModifier: number;
+};
+
 export type Memory = {
   name: string;
   description: string;
@@ -18,6 +25,7 @@ export type Memory = {
   currentDurability: number;
   maxDurability: number;
   isSummoned: boolean;
+  weaponDamage?: WeaponDamage;
 };
 
 export const MEMORY_TYPES: MemoryType[] = ["armor", "weapon", "tool", "charm"];
@@ -132,8 +140,10 @@ export function getTagColorForOwner(owner: string): string {
   return account?.tagColor || "gray";
 }
 
+export const DAMAGE_DICE = ["D4", "D6", "D8", "D10", "D12", "D20", "D100"] as const;
+
 export function normalizeMemory(m: any): Memory {
-  return {
+  const mem: Memory = {
     name: m.name || "",
     description: m.description || "",
     effect: m.effect || "",
@@ -142,6 +152,15 @@ export function normalizeMemory(m: any): Memory {
     maxDurability: typeof m.maxDurability === "number" ? m.maxDurability : 10,
     isSummoned: !!m.isSummoned,
   };
+  if (mem.memoryType === "weapon") {
+    mem.weaponDamage = m.weaponDamage ? {
+      hitModifier: typeof m.weaponDamage.hitModifier === "number" ? m.weaponDamage.hitModifier : 0,
+      damageDie: DAMAGE_DICE.includes(m.weaponDamage.damageDie) ? m.weaponDamage.damageDie : "D6",
+      diceCount: typeof m.weaponDamage.diceCount === "number" ? m.weaponDamage.diceCount : 1,
+      damageModifier: typeof m.weaponDamage.damageModifier === "number" ? m.weaponDamage.damageModifier : 0,
+    } : { hitModifier: 0, damageDie: "D6", diceCount: 1, damageModifier: 0 };
+  }
+  return mem;
 }
 
 export const WS_EVENTS = {

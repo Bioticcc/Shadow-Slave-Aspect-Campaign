@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
-import { type Character, type Memory, getMaxFragmentsForClass, computeClassUp, getEssenceMax, CLASS_TIERS, getClassTierIndex, normalizeMemory, MEMORY_TYPES } from "@shared/schema";
+import { type Character, type Memory, getMaxFragmentsForClass, computeClassUp, getEssenceMax, CLASS_TIERS, getClassTierIndex, normalizeMemory, MEMORY_TYPES, WS_EVENTS, type DiceRollPayload } from "@shared/schema";
 import { useUpdateCharacter, useDeleteCharacter } from "@/hooks/use-characters";
+import { useAuth } from "@/lib/auth";
+import { sendWsMessage } from "@/hooks/use-websocket";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets, Swords, Sparkles, Wrench, Zap } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets, Swords, Sparkles, Wrench, Zap, Crosshair, Flame } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
 import { MemoryEditor } from "./MemoryEditor";
@@ -67,9 +69,11 @@ export function CharacterSheet({
   onOpenChange: (o: boolean) => void;
   canEdit?: boolean;
 }) {
+  const { currentUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Character>>(character);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [lastWeaponRoll, setLastWeaponRoll] = useState<{ type: string; result: string; total: number } | null>(null);
   const updateChar = useUpdateCharacter();
   const deleteChar = useUpdateCharacter();
   const { mutate: performDelete } = useDeleteCharacter(); 
@@ -169,6 +173,62 @@ export function CharacterSheet({
       mems[memIndex] = { ...mem, isSummoned: true };
     }
     instantUpdate({ memories: mems });
+  };
+
+  const parseDieSides = (die: string): number => {
+    return parseInt(die.replace("D", "")) || 6;
+  };
+
+  const handleWeaponHit = (mem: Memory) => {
+    if (!mem.weaponDamage) return;
+    const d20 = Math.floor(Math.random() * 20) + 1;
+    const total = d20 + mem.weaponDamage.hitModifier;
+    const mod = mem.weaponDamage.hitModifier;
+    const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
+    const resultStr = `D20: ${d20} ${modStr}`;
+
+    setLastWeaponRoll({ type: "hit", result: resultStr, total });
+
+    const rollPayload: DiceRollPayload = {
+      user: currentUser || "Unknown",
+      results: [{
+        die: "D20",
+        sides: 20,
+        rolls: [d20],
+        subtotal: total,
+      }],
+      total,
+    };
+    sendWsMessage({
+      type: WS_EVENTS.DICE_ROLL,
+      payload: { ...rollPayload, user: `${currentUser} (${mem.name} Hit)` },
+    });
+  };
+
+  const handleWeaponDamage = (mem: Memory) => {
+    if (!mem.weaponDamage) return;
+    const { damageDie, diceCount, damageModifier } = mem.weaponDamage;
+    const sides = parseDieSides(damageDie);
+    const rolls = Array.from({ length: diceCount }, () => Math.floor(Math.random() * sides) + 1);
+    const rollSum = rolls.reduce((a, b) => a + b, 0);
+    const total = rollSum + damageModifier;
+    const mod = damageModifier;
+    const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
+    const resultStr = `${diceCount}${damageDie}: ${rolls.join(" + ")} ${modStr}`;
+
+    setLastWeaponRoll({ type: "damage", result: resultStr, total });
+
+    const rollPayload: DiceRollPayload = {
+      user: `${currentUser} (${mem.name} Dmg)`,
+      results: [{
+        die: damageDie,
+        sides,
+        rolls,
+        subtotal: total,
+      }],
+      total,
+    };
+    sendWsMessage({ type: WS_EVENTS.DICE_ROLL, payload: rollPayload });
   };
 
   const handleFragmentChange = (delta: number) => {
@@ -694,6 +754,41 @@ export function CharacterSheet({
                                 </Button>
                               )}
                             </div>
+                            {mem.isSummoned && mem.memoryType === "weapon" && mem.weaponDamage && canEdit && (
+                              <div className="mt-2 pt-2 border-t border-white/10 space-y-2">
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-xs"
+                                    onClick={() => handleWeaponHit(mem)}
+                                    data-testid={`button-weapon-hit-${i}`}
+                                  >
+                                    <Crosshair className="w-3 h-3 mr-1" /> Hit (D20{mem.weaponDamage.hitModifier >= 0 ? "+" : ""}{mem.weaponDamage.hitModifier})
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
+                                    onClick={() => handleWeaponDamage(mem)}
+                                    data-testid={`button-weapon-dmg-${i}`}
+                                  >
+                                    <Flame className="w-3 h-3 mr-1" /> Dmg ({mem.weaponDamage.diceCount}{mem.weaponDamage.damageDie}{mem.weaponDamage.damageModifier >= 0 ? "+" : ""}{mem.weaponDamage.damageModifier})
+                                  </Button>
+                                </div>
+                                {lastWeaponRoll && (
+                                  <div className="text-center p-2 bg-black/40 rounded-lg border border-white/5">
+                                    <span className="text-xs text-muted-foreground uppercase tracking-widest">
+                                      {lastWeaponRoll.type === "hit" ? "Hit Roll" : "Damage Roll"}
+                                    </span>
+                                    <p className="text-sm text-foreground mt-1">{lastWeaponRoll.result}</p>
+                                    <p className="text-xl font-display font-bold text-primary mt-1" data-testid="text-weapon-roll-total">
+                                      = {lastWeaponRoll.total}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       }) : <p className="text-sm text-muted-foreground italic">None</p>}
