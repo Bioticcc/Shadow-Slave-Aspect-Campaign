@@ -8,9 +8,10 @@ import { CreateCharacterDialog } from "@/components/CreateCharacterDialog";
 import { LogoutButton } from "@/components/LoginGuard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Wifi, WifiOff, LayoutGrid, List } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { type Character, getTagColorForOwner } from "@shared/schema";
+import { type Character, getTagColorForOwner, ACCOUNTS } from "@shared/schema";
 
 const TAG_COLOR_MAP: Record<string, string> = {
   cyan: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
@@ -73,6 +74,21 @@ function CharacterListItem({ character }: { character: Character }) {
         </div>
 
         <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+          {isDM && (
+            <Select
+              value={character.owner || "DM"}
+              onValueChange={(v) => updateChar.mutate({ id: character.id, updates: { owner: v } })}
+            >
+              <SelectTrigger className="w-[120px] h-8 text-xs bg-black/50 border-white/10" data-testid={`select-owner-${character.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACCOUNTS.map(a => (
+                  <SelectItem key={a.username} value={a.username}>{a.username}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <span className={`text-xs font-bold uppercase tracking-widest ${isActive ? 'text-emerald-400' : 'text-muted-foreground'}`}>
             {isActive ? "Active" : "Inactive"}
           </span>
