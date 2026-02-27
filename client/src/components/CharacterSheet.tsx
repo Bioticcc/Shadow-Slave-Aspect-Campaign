@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { type Character, getMaxFragmentsForClass, computeClassUp, getEssenceMax, CLASS_TIERS, getClassTierIndex } from "@shared/schema";
+import { type Character, type Memory, getMaxFragmentsForClass, computeClassUp, getEssenceMax, CLASS_TIERS, getClassTierIndex, normalizeMemory, MEMORY_TYPES } from "@shared/schema";
 import { useUpdateCharacter, useDeleteCharacter } from "@/hooks/use-characters";
 import {
   Dialog,
@@ -11,9 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets, Swords, Sparkles, Wrench, Zap } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
+import { MemoryEditor } from "./MemoryEditor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,31 @@ import {
 const RANKS = ["Dreamer", "Awakened", "Master", "Saint", "Sovreign", "##??!??!??!_Null_UnKnown"];
 const SOUL_CORES = ["Dormant"];
 const ASPECT_RANKS = ["Divine"];
+
+const MEMORY_TYPE_ICONS: Record<string, typeof Shield> = {
+  armor: Shield,
+  weapon: Swords,
+  tool: Wrench,
+  charm: Sparkles,
+};
+
+const MEMORY_TYPE_COLORS: Record<string, string> = {
+  armor: "text-sky-400 border-sky-500/30 bg-sky-500/10",
+  weapon: "text-red-400 border-red-500/30 bg-red-500/10",
+  tool: "text-amber-400 border-amber-500/30 bg-amber-500/10",
+  charm: "text-purple-400 border-purple-500/30 bg-purple-500/10",
+};
+
+function getMemories(character: Character): Memory[] {
+  return (character.memories || []).map(normalizeMemory);
+}
+
+function getSummonedArmorDurability(character: Character): { current: number; max: number } | null {
+  const mems = getMemories(character);
+  const armor = mems.find(m => m.memoryType === "armor" && m.isSummoned);
+  if (!armor) return null;
+  return { current: armor.currentDurability, max: armor.maxDurability };
+}
 
 export function CharacterSheet({ 
   character, 
@@ -72,6 +98,10 @@ export function CharacterSheet({
     data.totalSoulFragments = result.newTotalFragments;
     data.maxEssence = result.newMaxEssence;
 
+    if (data.memories) {
+      data.memories = (data.memories as any[]).map(normalizeMemory);
+    }
+
     updateChar.mutate({ id: character.id, updates: data }, {
       onSuccess: () => setIsEditing(false)
     });
@@ -92,8 +122,48 @@ export function CharacterSheet({
     }
   };
 
+  const memories = getMemories(character);
+  const armorShield = getSummonedArmorDurability(character);
+
   const instantUpdate = (updates: Partial<Character>) => {
     updateChar.mutate({ id: character.id, updates });
+  };
+
+  const handleDamage = (amount: number) => {
+    const mems = [...memories];
+    const armorIdx = mems.findIndex(m => m.memoryType === "armor" && m.isSummoned);
+    if (armorIdx !== -1) {
+      const armor = { ...mems[armorIdx] };
+      if (armor.currentDurability > 0) {
+        const absorbed = Math.min(amount, armor.currentDurability);
+        armor.currentDurability -= absorbed;
+        const remaining = amount - absorbed;
+        mems[armorIdx] = armor;
+        const updates: Partial<Character> = { memories: mems };
+        if (remaining > 0) {
+          updates.currentHealth = Math.max(0, character.currentHealth - remaining);
+        }
+        instantUpdate(updates);
+        return;
+      }
+    }
+    instantUpdate({ currentHealth: Math.max(0, character.currentHealth - amount) });
+  };
+
+  const handleSummonToggle = (memIndex: number) => {
+    const mems = [...memories];
+    const mem = mems[memIndex];
+    if (mem.isSummoned) {
+      mems[memIndex] = { ...mem, isSummoned: false, currentDurability: mem.maxDurability };
+    } else {
+      mems.forEach((m, i) => {
+        if (m.memoryType === mem.memoryType && m.isSummoned) {
+          mems[i] = { ...m, isSummoned: false, currentDurability: m.maxDurability };
+        }
+      });
+      mems[memIndex] = { ...mem, isSummoned: true };
+    }
+    instantUpdate({ memories: mems });
   };
 
   const handleFragmentChange = (delta: number) => {
@@ -229,14 +299,36 @@ export function CharacterSheet({
                         className="w-16 inline-block h-8 px-2 text-center"
                       /> : character.maxHealth}</span>
                   </span>
+                  {armorShield && (
+                    <span className="text-sm font-bold text-sky-400 flex items-center gap-1" data-testid="text-armor-durability">
+                      <Shield className="w-4 h-4" /> {armorShield.current}/{armorShield.max}
+                    </span>
+                  )}
+                </div>
+
+                {/* Health bar with armor overlay */}
+                <div className="relative h-3 bg-black/50 rounded-full mb-3 overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-red-500/80 rounded-full transition-all duration-300"
+                    style={{ width: `${character.maxHealth > 0 ? (character.currentHealth / character.maxHealth) * 100 : 0}%` }}
+                  />
+                  {armorShield && armorShield.current > 0 && (
+                    <div
+                      className="absolute inset-y-0 rounded-full transition-all duration-300 bg-sky-400/40 border-r border-sky-400/60"
+                      style={{
+                        left: `${character.maxHealth > 0 ? (character.currentHealth / character.maxHealth) * 100 : 0}%`,
+                        width: `${character.maxHealth > 0 ? Math.min((armorShield.current / character.maxHealth) * 100, 100 - (character.currentHealth / character.maxHealth) * 100) : 0}%`,
+                      }}
+                    />
+                  )}
                 </div>
 
                 <div className="flex gap-2">
                   <Button 
                     variant="outline" 
                     className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
-                    onClick={() => instantUpdate({ currentHealth: Math.max(0, character.currentHealth - 1) })}
-                    disabled={!canEdit || isEditing || character.currentHealth <= 0}
+                    onClick={() => handleDamage(1)}
+                    disabled={!canEdit || isEditing || (character.currentHealth <= 0 && (!armorShield || armorShield.current <= 0))}
                     data-testid="button-health-minus"
                   >
                     <Minus className="w-4 h-4 mr-1" /> DMG
@@ -548,21 +640,56 @@ export function CharacterSheet({
                 <div className="space-y-4">
                   <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Memories</h3>
                   {isEditing ? (
-                    <TraitEditor 
-                      title="Edit Memories" 
-                      traits={editData.memories || []} 
-                      onChange={t => setEditData({...editData, memories: t})} 
+                    <MemoryEditor
+                      memories={(editData.memories || []).map(normalizeMemory)}
+                      onChange={m => setEditData({...editData, memories: m})}
                     />
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {character.memories.length > 0 ? character.memories.map((mem, i) => (
-                        <TraitPopup key={i} trait={mem}>
-                          <div className="p-3 bg-secondary/30 border border-white/5 rounded-lg cursor-pointer hover:bg-secondary/50 hover:border-white/10 transition-all">
-                            <p className="font-medium text-sm text-foreground">{mem.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1 truncate">{mem.effect}</p>
+                      {memories.length > 0 ? memories.map((mem, i) => {
+                        const TypeIcon = MEMORY_TYPE_ICONS[mem.memoryType] || Wrench;
+                        const colorClass = MEMORY_TYPE_COLORS[mem.memoryType] || MEMORY_TYPE_COLORS.tool;
+                        return (
+                          <div key={i} className={`relative p-3 rounded-lg border transition-all ${
+                            mem.isSummoned
+                              ? `${colorClass} shadow-lg shadow-current/20 ring-1 ring-current/30`
+                              : "bg-secondary/30 border-white/5 hover:bg-secondary/50 hover:border-white/10"
+                          }`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <TraitPopup trait={mem}>
+                                <div className="flex-1 cursor-pointer min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <TypeIcon className="w-4 h-4 shrink-0" />
+                                    <p className="font-medium text-sm text-foreground truncate">{mem.name}</p>
+                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">{mem.memoryType}</span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground truncate">{mem.effect}</p>
+                                  <div className="flex items-center gap-2 mt-1.5">
+                                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Durability</span>
+                                    <span className="text-xs font-bold">{mem.currentDurability}/{mem.maxDurability}</span>
+                                  </div>
+                                </div>
+                              </TraitPopup>
+                              {canEdit && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSummonToggle(i)}
+                                  className={`shrink-0 text-xs h-7 ${
+                                    mem.isSummoned
+                                      ? "border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                                      : "border-white/10 text-muted-foreground hover:bg-white/5"
+                                  }`}
+                                  data-testid={`button-summon-${i}`}
+                                >
+                                  <Zap className="w-3 h-3 mr-1" />
+                                  {mem.isSummoned ? "Dismiss" : "Summon"}
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </TraitPopup>
-                      )) : <p className="text-sm text-muted-foreground italic">None</p>}
+                        );
+                      }) : <p className="text-sm text-muted-foreground italic">None</p>}
                     </div>
                   )}
                 </div>

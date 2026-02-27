@@ -8,6 +8,20 @@ type Trait = {
   effect: string;
 };
 
+export type MemoryType = "armor" | "weapon" | "tool" | "charm";
+
+export type Memory = {
+  name: string;
+  description: string;
+  effect: string;
+  memoryType: MemoryType;
+  currentDurability: number;
+  maxDurability: number;
+  isSummoned: boolean;
+};
+
+export const MEMORY_TYPES: MemoryType[] = ["armor", "weapon", "tool", "charm"];
+
 export const CLASS_TIERS = [
   { name: "Beast", maxFragments: 1000 },
   { name: "Monster", maxFragments: 2000 },
@@ -79,7 +93,7 @@ export const characters = pgTable("characters", {
   soulFragments: integer("soul_fragments").notNull().default(0),
   soulClass: text("soul_class").notNull().default("Beast"),
   totalSoulFragments: integer("total_soul_fragments").notNull().default(0),
-  memories: json("memories").$type<Trait[]>().notNull().default([]),
+  memories: json("memories").$type<Memory[]>().notNull().default([]),
   echoes: text("echoes").notNull().default(""),
   attributes: json("attributes").$type<Trait[]>().notNull().default([]),
   aspect: text("aspect").notNull().default(""),
@@ -116,6 +130,18 @@ export function getAccountByUsername(username: string) {
 export function getTagColorForOwner(owner: string): string {
   const account = ACCOUNTS.find(a => a.username === owner);
   return account?.tagColor || "gray";
+}
+
+export function normalizeMemory(m: any): Memory {
+  return {
+    name: m.name || "",
+    description: m.description || "",
+    effect: m.effect || "",
+    memoryType: MEMORY_TYPES.includes(m.memoryType) ? m.memoryType : "tool",
+    currentDurability: typeof m.currentDurability === "number" ? m.currentDurability : 10,
+    maxDurability: typeof m.maxDurability === "number" ? m.maxDurability : 10,
+    isSummoned: !!m.isSummoned,
+  };
 }
 
 export const WS_EVENTS = {

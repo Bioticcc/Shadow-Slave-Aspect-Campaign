@@ -6,7 +6,10 @@
   ## Features
   - Real-time character stat synchronization (Health, Essence, Soul Fragments, etc.)
   - Custom character icon uploads (base64, 5MB limit)
-  - Stylized character sheets with editable traits (Memories, Attributes, Echoes, Aspect, Flaw)
+  - Stylized character sheets with editable traits (Attributes, Echoes, Aspect, Flaw)
+  - Memory system: each memory has type (armor/weapon/tool/charm), durability, and summon state
+  - Summoned memories glow with type-colored borders; only 1 per type can be active
+  - Armor memories absorb damage before health; desummoning refreshes durability to max
   - Persistent storage using PostgreSQL
   - Per-user account login system (5 accounts: Tien, Marlin, Nico, Ambrose, DM)
   - Character ownership: users can only edit their own characters; DM can edit all
@@ -37,7 +40,8 @@
   - isActive, owner
 
   ## Key Files
-  - `shared/schema.ts` — DB schema, types, class tiers, accounts, helper functions
+  - `shared/schema.ts` — DB schema, types (Memory, MemoryType), class tiers, accounts, helpers (normalizeMemory)
+  - `client/src/components/MemoryEditor.tsx` — Memory editor with add/edit/remove, type dropdown, durability
   - `server/routes.ts` — API routes + WebSocket + seed
   - `server/storage.ts` — Storage interface (CRUD)
   - `client/src/lib/auth.tsx` — Auth context provider (login/logout, current user)
