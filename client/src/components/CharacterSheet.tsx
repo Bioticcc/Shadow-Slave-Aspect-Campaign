@@ -49,6 +49,10 @@ export function CharacterSheet({
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("This image is too large (max 5MB). Please choose a smaller file.");
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setEditData({ ...editData, icon: reader.result as string });
