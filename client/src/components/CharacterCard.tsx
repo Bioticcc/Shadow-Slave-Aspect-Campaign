@@ -3,7 +3,7 @@ import { type Character } from "@shared/schema";
 import { useUpdateCharacter } from "@/hooks/use-characters";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Minus, Plus, Shield } from "lucide-react";
+import { Minus, Plus, Shield, Droplets } from "lucide-react";
 import { CharacterSheet } from "./CharacterSheet";
 import { motion } from "framer-motion";
 
@@ -31,8 +31,34 @@ export function CharacterCard({ character }: { character: Character }) {
     }
   };
 
+  const handleEssenceUse = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const current = character.currentEssence ?? 0;
+    if (current > 0) {
+      updateChar.mutate({ 
+        id: character.id, 
+        updates: { currentEssence: current - 1 } 
+      });
+    }
+  };
+
+  const handleEssenceRestore = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const current = character.currentEssence ?? 0;
+    const max = character.maxEssence ?? 10;
+    if (current < max) {
+      updateChar.mutate({ 
+        id: character.id, 
+        updates: { currentEssence: current + 1 } 
+      });
+    }
+  };
+
   const healthPercent = (character.currentHealth / character.maxHealth) * 100;
   const isLowHealth = healthPercent <= 25;
+  const essenceCurrent = character.currentEssence ?? 0;
+  const essenceMax = character.maxEssence ?? 10;
+  const essencePercent = essenceMax > 0 ? (essenceCurrent / essenceMax) * 100 : 0;
 
   return (
     <>
@@ -76,20 +102,21 @@ export function CharacterCard({ character }: { character: Character }) {
               </span>
             </div>
             
-            <div className="h-2 bg-black rounded-full overflow-hidden mb-4 border border-white/5">
+            <div className="h-2 bg-black rounded-full overflow-hidden mb-3 border border-white/5">
               <div 
                 className={`h-full transition-all duration-500 ${isLowHealth ? 'bg-destructive' : 'bg-primary'}`}
                 style={{ width: `${healthPercent}%` }}
               />
             </div>
             
-            <div className="flex gap-2 w-full">
+            <div className="flex gap-2 w-full mb-4">
               <Button 
                 variant="outline" 
                 size="sm" 
                 className="flex-1 bg-black/50 border-destructive/30 hover:bg-destructive/20 hover:text-destructive"
                 onClick={handleDamage}
                 disabled={character.currentHealth <= 0 || updateChar.isPending}
+                data-testid={`button-card-dmg-${character.id}`}
               >
                 <Minus className="w-4 h-4" />
               </Button>
@@ -99,6 +126,46 @@ export function CharacterCard({ character }: { character: Character }) {
                 className="flex-1 bg-black/50 border-emerald-500/30 hover:bg-emerald-500/20 hover:text-emerald-400"
                 onClick={handleHeal}
                 disabled={character.currentHealth >= character.maxHealth || updateChar.isPending}
+                data-testid={`button-card-heal-${character.id}`}
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                <Droplets className="w-3 h-3 text-violet-400" /> ES
+              </span>
+              <span className="text-sm font-bold text-violet-300">
+                {essenceCurrent} / {essenceMax}
+              </span>
+            </div>
+
+            <div className="h-2 bg-black rounded-full overflow-hidden mb-3 border border-white/5">
+              <div 
+                className="h-full transition-all duration-500 bg-violet-500"
+                style={{ width: `${essencePercent}%` }}
+              />
+            </div>
+
+            <div className="flex gap-2 w-full">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1 bg-black/50 border-violet-500/30 hover:bg-violet-500/20 hover:text-violet-400"
+                onClick={handleEssenceUse}
+                disabled={essenceCurrent <= 0 || updateChar.isPending}
+                data-testid={`button-card-essence-use-${character.id}`}
+              >
+                <Minus className="w-4 h-4" />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1 bg-black/50 border-violet-500/30 hover:bg-violet-500/20 hover:text-violet-400"
+                onClick={handleEssenceRestore}
+                disabled={essenceCurrent >= essenceMax || updateChar.isPending}
+                data-testid={`button-card-essence-restore-${character.id}`}
               >
                 <Plus className="w-4 h-4" />
               </Button>

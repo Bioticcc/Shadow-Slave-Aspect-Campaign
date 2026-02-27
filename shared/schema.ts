@@ -74,6 +74,7 @@ export const characters = pgTable("characters", {
   maxEssence: integer("max_essence").notNull().default(10),
   trueName: text("true_name").notNull(),
   rank: text("rank").notNull(), // "Dreamer", "Awakened", "Master", "Saint", "Sovreign", "##??!??!??!_Null_UnKnown"
+  corePrefix: text("core_prefix").notNull().default("Soul"),
   soulCore: text("soul_core").notNull().default("Dormant"),
   soulFragments: integer("soul_fragments").notNull().default(0),
   soulClass: text("soul_class").notNull().default("Beast"),

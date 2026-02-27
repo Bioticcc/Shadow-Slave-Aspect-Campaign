@@ -288,7 +288,7 @@ export function CharacterSheet({
               <div className="bg-black/30 rounded-xl p-5 border border-white/5 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-[50px] pointer-events-none" />
                 <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
-                  <Gem className="w-4 h-4 text-blue-400" /> Soul Fragments
+                  <Gem className="w-4 h-4 text-blue-400" /> {character.corePrefix || "Soul"} Fragments
                 </h4>
                 
                 <div className="flex items-center justify-between mb-2">
@@ -366,14 +366,23 @@ export function CharacterSheet({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Soul Core</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{character.corePrefix || "Soul"} Core</label>
                   {isEditing ? (
-                    <Select value={editData.soulCore} onValueChange={(v) => setEditData({...editData, soulCore: v})}>
-                      <SelectTrigger className="mt-1 bg-black/50 border-white/10"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {SOUL_CORES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <div className="space-y-2 mt-1">
+                      <Input 
+                        value={editData.corePrefix} 
+                        onChange={e => setEditData({...editData, corePrefix: e.target.value})}
+                        className="bg-black/50 border-white/10 h-8 text-xs"
+                        placeholder="Prefix (e.g. Soul, Steel, Corrupted)"
+                        data-testid="input-core-prefix"
+                      />
+                      <Select value={editData.soulCore} onValueChange={(v) => setEditData({...editData, soulCore: v})}>
+                        <SelectTrigger className="bg-black/50 border-white/10"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {SOUL_CORES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   ) : (
                     <p className="text-lg font-display text-foreground mt-1">{character.soulCore}</p>
                   )}
