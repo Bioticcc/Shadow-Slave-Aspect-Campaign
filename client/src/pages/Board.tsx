@@ -1,13 +1,74 @@
-import { useCharacters } from "@/hooks/use-characters";
+import { useState } from "react";
+import { useCharacters, useUpdateCharacter } from "@/hooks/use-characters";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { CharacterCard } from "@/components/CharacterCard";
+import { CharacterSheet } from "@/components/CharacterSheet";
 import { CreateCharacterDialog } from "@/components/CreateCharacterDialog";
-import { Wifi, WifiOff } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import { Wifi, WifiOff, LayoutGrid, List } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { type Character } from "@shared/schema";
+
+function CharacterListItem({ character }: { character: Character }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const updateChar = useUpdateCharacter();
+  const isActive = (character.isActive ?? 1) === 1;
+
+  const handleToggle = (checked: boolean) => {
+    updateChar.mutate({ id: character.id, updates: { isActive: checked ? 1 : 0 } });
+  };
+
+  return (
+    <>
+      <div
+        onClick={() => setSheetOpen(true)}
+        className="flex items-center justify-between p-4 bg-black/30 rounded-xl border border-white/5 hover:border-primary/30 cursor-pointer transition-all group"
+        data-testid={`list-item-${character.id}`}
+      >
+        <div className="flex items-center gap-4">
+          <Avatar className="w-10 h-10 border border-primary/30">
+            {character.icon ? (
+              <img src={character.icon} alt={character.name} className="w-full h-full object-cover" />
+            ) : (
+              <AvatarFallback className="bg-secondary font-display text-sm text-primary">
+                {character.name.substring(0, 2).toUpperCase()}
+              </AvatarFallback>
+            )}
+          </Avatar>
+          <div>
+            <p className="font-display font-bold text-foreground group-hover:text-primary transition-colors">
+              {character.name}
+            </p>
+            <p className="text-xs text-muted-foreground">{character.aspect || "No Aspect"}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+          <span className={`text-xs font-bold uppercase tracking-widest ${isActive ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+            {isActive ? "Active" : "Inactive"}
+          </span>
+          <Switch
+            checked={isActive}
+            onCheckedChange={handleToggle}
+            data-testid={`toggle-active-${character.id}`}
+          />
+        </div>
+      </div>
+
+      <CharacterSheet
+        character={character}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
+    </>
+  );
+}
 
 export default function Board() {
   const { data: characters, isLoading, error } = useCharacters();
   const { connected } = useWebSocket();
+  const [tab, setTab] = useState<"board" | "list">("board");
 
   if (isLoading) {
     return (
@@ -26,9 +87,12 @@ export default function Board() {
     );
   }
 
+  const activeCharacters = characters?.filter(c => (c.isActive ?? 1) === 1) || [];
+  const allCharacters = characters || [];
+
   return (
     <div className="min-h-screen p-6 md:p-12 max-w-[1600px] mx-auto">
-      <header className="flex flex-col md:flex-row items-center justify-between gap-6 mb-12 border-b border-white/10 pb-8">
+      <header className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8 border-b border-white/10 pb-8">
         <div>
           <h1 className="text-4xl md:text-5xl font-display font-bold text-glow text-primary tracking-wider uppercase">
             Aspects <span className="text-foreground">Campaign</span>
@@ -43,30 +107,74 @@ export default function Board() {
                 <WifiOff className="w-3 h-3" /> Reconnecting...
               </span>
             )}
-            <span className="text-muted-foreground ml-2">Active Participants: {characters?.length || 0}</span>
+            <span className="text-muted-foreground ml-2">Active Participants: {activeCharacters.length}</span>
           </div>
         </div>
         
         <CreateCharacterDialog />
       </header>
 
-      {characters?.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-4 opacity-50">
-          <div className="w-24 h-24 rounded-full border-2 border-dashed border-muted-foreground animate-[spin_10s_linear_infinite]" />
-          <h3 className="font-display text-2xl">No souls manifested</h3>
-          <p className="text-muted-foreground">The board lies empty. Manifest a character to begin.</p>
-        </div>
-      ) : (
-        <motion.div 
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-          layout
+      <div className="flex gap-2 mb-8">
+        <button
+          onClick={() => setTab("board")}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-widest transition-all ${
+            tab === "board"
+              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+              : "bg-black/30 text-muted-foreground hover:text-foreground hover:bg-black/50 border border-white/5"
+          }`}
+          data-testid="tab-board"
         >
-          <AnimatePresence>
-            {characters?.map((char) => (
-              <CharacterCard key={char.id} character={char} />
-            ))}
-          </AnimatePresence>
-        </motion.div>
+          <LayoutGrid className="w-4 h-4" /> Board
+        </button>
+        <button
+          onClick={() => setTab("list")}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-widest transition-all ${
+            tab === "list"
+              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+              : "bg-black/30 text-muted-foreground hover:text-foreground hover:bg-black/50 border border-white/5"
+          }`}
+          data-testid="tab-list"
+        >
+          <List className="w-4 h-4" /> Character List
+        </button>
+      </div>
+
+      {tab === "board" && (
+        <>
+          {activeCharacters.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-4 opacity-50">
+              <div className="w-24 h-24 rounded-full border-2 border-dashed border-muted-foreground animate-[spin_10s_linear_infinite]" />
+              <h3 className="font-display text-2xl">No active souls</h3>
+              <p className="text-muted-foreground">Set characters to Active in the Character List to display them here.</p>
+            </div>
+          ) : (
+            <motion.div 
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              layout
+            >
+              <AnimatePresence>
+                {activeCharacters.map((char) => (
+                  <CharacterCard key={char.id} character={char} />
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </>
+      )}
+
+      {tab === "list" && (
+        <div className="space-y-3 max-w-3xl">
+          {allCharacters.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-4 opacity-50">
+              <h3 className="font-display text-2xl">No souls manifested</h3>
+              <p className="text-muted-foreground">Create a character to begin.</p>
+            </div>
+          ) : (
+            allCharacters.map((char) => (
+              <CharacterListItem key={char.id} character={char} />
+            ))
+          )}
+        </div>
       )}
     </div>
   );

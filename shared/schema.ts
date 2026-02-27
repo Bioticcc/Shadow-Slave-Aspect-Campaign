@@ -87,6 +87,7 @@ export const characters = pgTable("characters", {
   aspectAbilities: json("aspect_abilities").$type<Trait[]>().notNull().default([]),
   aspectAbilityDescription: text("aspect_ability_description").notNull().default(""),
   flaw: json("flaw").$type<Trait>().notNull().default({ name: "", description: "", effect: "" }),
+  isActive: integer("is_active").notNull().default(1),
 });
 
 export const insertCharacterSchema = createInsertSchema(characters).omit({ id: true });
