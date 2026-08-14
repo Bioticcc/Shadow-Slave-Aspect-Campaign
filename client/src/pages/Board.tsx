@@ -1,16 +1,23 @@
-import { useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useCharacters, useUpdateCharacter } from "@/hooks/use-characters";
+import { useCampaignState, usePassHour, useSetCampaignDay, useUndoCampaignAction, useUpdateCampaignDay } from "@/hooks/use-campaign";
 import { useAuth } from "@/lib/auth";
+import { useMemoryTrade } from "@/hooks/use-memory-trade";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { CharacterCard } from "@/components/CharacterCard";
 import { CharacterSheet } from "@/components/CharacterSheet";
 import { CreateCharacterDialog } from "@/components/CreateCharacterDialog";
 import { DiceRoller } from "@/components/DiceRoller";
+import { MemoryBankTab } from "@/components/MemoryBankTab";
+import { MemoryTradeTab } from "@/components/MemoryTradeTab";
+import { MonsterManualTab } from "@/components/MonsterManualTab";
+import { RoundLogPanel } from "@/components/RoundLogPanel";
 import { LogoutButton } from "@/components/LoginGuard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wifi, WifiOff, LayoutGrid, List } from "lucide-react";
+import { BellDot, BookOpenText, CalendarPlus, Clock3, Handshake, LayoutGrid, LibraryBig, List, Undo2, Wifi, WifiOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { type Character, getTagColorForOwner, ACCOUNTS } from "@shared/schema";
 
@@ -114,9 +121,91 @@ function CharacterListItem({ character }: { character: Character }) {
 
 export default function Board() {
   const { data: characters, isLoading, error } = useCharacters();
+  const { data: campaignState } = useCampaignState();
+  const updateCampaignDay = useUpdateCampaignDay();
+  const setCampaignDay = useSetCampaignDay();
+  const passHour = usePassHour();
+  const undoCampaignAction = useUndoCampaignAction();
   const { connected } = useWebSocket();
-  const { currentUser } = useAuth();
-  const [tab, setTab] = useState<"board" | "list">("board");
+  const { currentUser, isDM } = useAuth();
+  const [tab, setTab] = useState<"board" | "list" | "trade" | "manual" | "bank">("board");
+  const [isEditingDay, setIsEditingDay] = useState(false);
+  const [dayDraft, setDayDraft] = useState("");
+  const {
+    pendingRequests,
+    pendingRequestCount,
+    outgoingRequests,
+    activeSession,
+    statusMessage,
+    clearStatusMessage,
+    requestTrade,
+    acceptTradeRequest,
+    declineTradeRequest,
+    updateTradeOffer,
+    setTradeAccepted,
+    cancelTradeSession,
+  } = useMemoryTrade();
+  const dayCount = campaignState?.dayCount ?? 28;
+
+  useEffect(() => {
+    if (!isEditingDay) {
+      setDayDraft(String(dayCount));
+    }
+  }, [dayCount, isEditingDay]);
+
+  const handleAdvanceDay = async () => {
+    try {
+      await updateCampaignDay.mutateAsync(1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to advance day";
+      alert(message);
+    }
+  };
+
+  const handlePassHour = async () => {
+    try {
+      await passHour.mutateAsync();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to pass an hour";
+      alert(message);
+    }
+  };
+
+  const handleUndoCampaignAction = async () => {
+    try {
+      await undoCampaignAction.mutateAsync();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to undo DM action";
+      alert(message);
+    }
+  };
+
+  const startDayEdit = () => {
+    if (!isDM) return;
+    setDayDraft(String(dayCount));
+    setIsEditingDay(true);
+  };
+
+  const cancelDayEdit = () => {
+    setIsEditingDay(false);
+    setDayDraft(String(dayCount));
+  };
+
+  const submitDayEdit = async () => {
+    if (!isDM) return;
+    const parsed = Number.parseInt(dayDraft, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      alert("Day must be a whole number of at least 1.");
+      return;
+    }
+    try {
+      await setCampaignDay.mutateAsync(parsed);
+      setIsEditingDay(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to set day";
+      alert(message);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -137,14 +226,79 @@ export default function Board() {
 
   const activeCharacters = characters?.filter(c => (c.isActive ?? 1) === 1) || [];
   const allCharacters = characters || [];
+  const dmRoundControls: ReactNode = isDM ? (
+    <>
+      <Button
+        onClick={handleUndoCampaignAction}
+        disabled={undoCampaignAction.isPending}
+        data-testid="button-campaign-undo"
+      >
+        <Undo2 className="w-4 h-4 mr-2" />
+        {undoCampaignAction.isPending ? "Undoing..." : "Undo"}
+      </Button>
+      <Button
+        onClick={handleAdvanceDay}
+        disabled={updateCampaignDay.isPending || setCampaignDay.isPending}
+        data-testid="button-day-advance"
+      >
+        <CalendarPlus className="w-4 h-4 mr-2" />
+        {updateCampaignDay.isPending ? "Updating..." : "Advance Day"}
+      </Button>
+      <Button
+        onClick={handlePassHour}
+        disabled={passHour.isPending}
+        data-testid="button-hour-pass"
+      >
+        <Clock3 className="w-4 h-4 mr-2" />
+        {passHour.isPending ? "Advancing..." : "An Hour Has Passed"}
+      </Button>
+    </>
+  ) : null;
 
   return (
     <div className="min-h-screen p-6 md:p-12 max-w-[1600px] mx-auto">
       <header className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8 border-b border-white/10 pb-8">
-        <div>
-          <h1 className="text-4xl md:text-5xl font-display font-bold text-glow text-primary tracking-wider uppercase">
-            Aspects <span className="text-foreground">Campaign</span>
-          </h1>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-4">
+            <h1 className="text-4xl md:text-5xl font-display font-bold text-glow text-primary tracking-wider uppercase">
+              Aspects <span className="text-foreground">Campaign</span> <span className="text-foreground/35">|</span> Day -{" "}
+              {isDM && isEditingDay ? (
+                <input
+                  type="number"
+                  min={1}
+                  value={dayDraft}
+                  onChange={(e) => setDayDraft(e.target.value)}
+                  onBlur={() => {
+                    if (!setCampaignDay.isPending) {
+                      void submitDayEdit();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void submitDayEdit();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      cancelDayEdit();
+                    }
+                  }}
+                  autoFocus
+                  className="w-24 text-center rounded-md border border-primary/40 bg-black/40 text-foreground text-3xl md:text-4xl font-display font-bold px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  data-testid="input-day-count"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={startDayEdit}
+                  disabled={!isDM}
+                  className={`font-display font-bold ${isDM ? "text-foreground hover:text-primary transition-colors cursor-text underline decoration-dotted underline-offset-8" : "text-foreground"}`}
+                  data-testid="text-day-count"
+                >
+                  {dayCount}
+                </button>
+              )}
+            </h1>
+          </div>
           <div className="flex items-center gap-2 mt-2 text-sm">
             {connected ? (
               <span className="text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
@@ -188,6 +342,47 @@ export default function Board() {
         >
           <List className="w-4 h-4" /> Character List
         </button>
+        <button
+          onClick={() => setTab("trade")}
+          className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-widest transition-all ${
+            tab === "trade"
+              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+              : "bg-black/30 text-muted-foreground hover:text-foreground hover:bg-black/50 border border-white/5"
+          }`}
+          data-testid="tab-memory-trade"
+        >
+          <Handshake className="w-4 h-4" /> Memory Trade
+          {pendingRequestCount > 0 && (
+            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-bold bg-red-500 text-white border border-black/60">
+              <BellDot className="w-3 h-3 mr-0.5" />
+              {pendingRequestCount}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setTab("manual")}
+          className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-widest transition-all ${
+            tab === "manual"
+              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+              : "bg-black/30 text-muted-foreground hover:text-foreground hover:bg-black/50 border border-white/5"
+          }`}
+          data-testid="tab-monster-manual"
+        >
+          <BookOpenText className="w-4 h-4" /> Monster Manual
+        </button>
+        {isDM && (
+          <button
+            onClick={() => setTab("bank")}
+            className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-widest transition-all ${
+              tab === "bank"
+                ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                : "bg-black/30 text-muted-foreground hover:text-foreground hover:bg-black/50 border border-white/5"
+            }`}
+            data-testid="tab-memory-bank"
+          >
+            <LibraryBig className="w-4 h-4" /> Memory Bank
+          </button>
+        )}
       </div>
 
       {tab === "board" && (
@@ -227,7 +422,30 @@ export default function Board() {
           )}
         </div>
       )}
+
+      {tab === "trade" && currentUser && (
+        <MemoryTradeTab
+          characters={allCharacters}
+          currentUser={currentUser}
+          pendingRequests={pendingRequests}
+          outgoingRequests={outgoingRequests}
+          activeSession={activeSession}
+          statusMessage={statusMessage}
+          onClearStatusMessage={clearStatusMessage}
+          onRequestTrade={requestTrade}
+          onAcceptRequest={acceptTradeRequest}
+          onDeclineRequest={declineTradeRequest}
+          onUpdateOffer={updateTradeOffer}
+          onSetAccepted={setTradeAccepted}
+          onCancelSession={cancelTradeSession}
+        />
+      )}
+      {tab === "manual" && <MonsterManualTab />}
+      {tab === "bank" && isDM && (
+        <MemoryBankTab characters={allCharacters} />
+      )}
       <DiceRoller />
+      <RoundLogPanel leftControls={dmRoundControls} />
     </div>
   );
 }

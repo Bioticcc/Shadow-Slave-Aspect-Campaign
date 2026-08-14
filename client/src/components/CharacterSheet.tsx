@@ -1,11 +1,34 @@
 import { useState, useEffect } from "react";
-import { type Character, type Memory, getMaxFragmentsForClass, computeClassUp, getEssenceMax, CLASS_TIERS, getClassTierIndex, normalizeMemory, MEMORY_TYPES, WS_EVENTS, type DiceRollPayload } from "@shared/schema";
+import {
+  type ArmorDexterityBonusMode,
+  type Character,
+  type CharacterStats,
+  type Echo,
+  type Memory,
+  CLASS_TIERS,
+  MEMORY_CORES,
+  MEMORY_TIERS,
+  WS_EVENTS,
+  computeClassUp,
+  getEffectiveMemoryArmorClass,
+  getArmorDexterityBonus,
+  getClassTierIndex,
+  getEssenceMax,
+  getMaxFragmentsForClass,
+  getProficiencyBonus,
+  normalizeEchoes,
+  normalizeMemory,
+  normalizeStats,
+  serializeEchoes,
+  type DiceRollPayload,
+} from "@shared/schema";
 import { useUpdateCharacter, useDeleteCharacter } from "@/hooks/use-characters";
 import { useAuth } from "@/lib/auth";
 import { sendWsMessage } from "@/hooks/use-websocket";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -13,10 +36,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets, Swords, Sparkles, Wrench, Zap, Crosshair, Flame } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets, Swords, Sparkles, Wrench, Zap, Crosshair, Flame, Fingerprint, Anvil } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
+import { ExpandedTraitPopup } from "./ExpandedTraitPopup";
+import { RememberedByPopup } from "./RememberedByPopup";
+import { ReforgingPopup } from "./ReforgingPopup";
+import { StarSeekingPopup } from "./StarSeekingPopup";
+import { getPrimaryStarSeekingLimb, getStarSeekingArmorBonus, normalizeExpandedAttributes } from "@/lib/expanded-attributes";
 import { MemoryEditor } from "./MemoryEditor";
+import { EchoPopup } from "./EchoPopup";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +61,40 @@ import {
 const RANKS = ["Dreamer", "Awakened", "Master", "Saint", "Sovreign", "##??!??!??!_Null_UnKnown"];
 const SOUL_CORES = ["Dormant"];
 const ASPECT_RANKS = ["Divine"];
+const STAT_FIELDS: Array<{ key: keyof CharacterStats; short: string; label: string }> = [
+  { key: "strength", short: "STR", label: "Strength" },
+  { key: "dexterity", short: "DEX", label: "Dexterity" },
+  { key: "constitution", short: "CON", label: "Constitution" },
+  { key: "intelligence", short: "INT", label: "Intelligence" },
+  { key: "wisdom", short: "WIS", label: "Wisdom" },
+  { key: "charisma", short: "CHA", label: "Charisma" },
+];
+
+const createDefaultEcho = (name = ""): Echo => ({
+  name: name.trim() || "",
+  armorClass: 8,
+  description: "",
+  damageMoves: [],
+  core: "dormant",
+  tier: 1,
+  currentHealth: 8,
+  maxHealth: 8,
+  healRate: 1,
+  summonCost: 0,
+  isSummoned: false,
+});
+
+function toStatDrafts(value: unknown): Record<keyof CharacterStats, string> {
+  const normalized = normalizeStats(value);
+  return {
+    strength: String(normalized.strength),
+    dexterity: String(normalized.dexterity),
+    constitution: String(normalized.constitution),
+    intelligence: String(normalized.intelligence),
+    wisdom: String(normalized.wisdom),
+    charisma: String(normalized.charisma),
+  };
+}
 
 const MEMORY_TYPE_ICONS: Record<string, typeof Shield> = {
   armor: Shield,
@@ -47,15 +110,48 @@ const MEMORY_TYPE_COLORS: Record<string, string> = {
   charm: "text-purple-400 border-purple-500/30 bg-purple-500/10",
 };
 
+const MEMORY_DIALOG_CONTENT_CLASS = "glass-panel border-primary/20 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,36rem)] overflow-hidden gap-0 content-start grid-rows-[auto_minmax(0,1fr)]";
+const MEMORY_DIALOG_BODY_CLASS = "h-full border-t border-white/10 pt-3 space-y-3 overflow-y-auto pr-1";
+const ECHO_ADD_CONTENT_CLASS = "glass-panel border-primary/20 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,36rem)] overflow-hidden p-0";
+const ECHO_ADD_BODY_CLASS = "flex-1 min-h-0 overflow-y-auto p-6 space-y-3";
+
+function getDexterity(character: Character): number {
+  return normalizeStats(character.stats).dexterity;
+}
+
 function getMemories(character: Character): Memory[] {
-  return (character.memories || []).map(normalizeMemory);
+  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+  return (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
+}
+
+function getSummonedArmorMemory(character: Character): Memory | null {
+  const mems = getMemories(character);
+  return mems.find(m => m.memoryType === "armor" && m.isSummoned) || null;
 }
 
 function getSummonedArmorDurability(character: Character): { current: number; max: number } | null {
-  const mems = getMemories(character);
-  const armor = mems.find(m => m.memoryType === "armor" && m.isSummoned);
+  const armor = getSummonedArmorMemory(character);
   if (!armor) return null;
   return { current: armor.currentDurability, max: armor.maxDurability };
+}
+
+function getBaseArmorClass(character: Character): number {
+  const armor = getSummonedArmorMemory(character);
+  if (armor && typeof armor.armorClass === "number") {
+    return getEffectiveMemoryArmorClass(armor);
+  }
+  return Math.max(1, character.armorClass ?? 8);
+}
+
+function getArmorDexterityMode(character: Character): ArmorDexterityBonusMode {
+  const armor = getSummonedArmorMemory(character);
+  return armor?.armorDexterityBonus ?? "full";
+}
+
+function getEffectiveArmorClass(character: Character): number {
+  const dexterity = getDexterity(character);
+  const dexterityBonus = getArmorDexterityBonus(dexterity, getArmorDexterityMode(character));
+  return getBaseArmorClass(character) + dexterityBonus;
 }
 
 export function CharacterSheet({ 
@@ -73,18 +169,35 @@ export function CharacterSheet({
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Character>>(character);
   const [deleteConfirm, setDeleteConfirm] = useState("");
-  const [lastWeaponRoll, setLastWeaponRoll] = useState<{ type: string; result: string; total: number } | null>(null);
+  const [lastWeaponRoll, setLastWeaponRoll] = useState<{ type: "hit" | "damage"; result: string; total: number; memoryIndex: number } | null>(null);
+  const [lastEchoMoveRoll, setLastEchoMoveRoll] = useState<{ type: "hit" | "damage"; result: string; total: number; echoIndex: number; moveIndex: number } | null>(null);
+  const [manualCurrentHealth, setManualCurrentHealth] = useState<string>(String(character.currentHealth));
+  const [statDrafts, setStatDrafts] = useState<Record<keyof CharacterStats, string>>(toStatDrafts(character.stats));
+  const [isAddingEcho, setIsAddingEcho] = useState(false);
+  const [newEchoDraft, setNewEchoDraft] = useState<Echo>(createDefaultEcho());
+  const displayAttributes = normalizeExpandedAttributes(character);
   const updateChar = useUpdateCharacter();
   const deleteChar = useUpdateCharacter();
   const { mutate: performDelete } = useDeleteCharacter(); 
 
   useEffect(() => {
     if (open) {
-      setEditData(character);
+      setEditData({ ...character, attributes: normalizeExpandedAttributes(character) });
       setIsEditing(false);
       setDeleteConfirm("");
+      setLastWeaponRoll(null);
+      setLastEchoMoveRoll(null);
+      setManualCurrentHealth(String(character.currentHealth));
+      setStatDrafts(toStatDrafts(character.stats));
+      setIsAddingEcho(false);
+      setNewEchoDraft(createDefaultEcho());
     }
   }, [open, character]);
+
+  useEffect(() => {
+    if (isEditing) return;
+    setIsAddingEcho(false);
+  }, [isEditing]);
 
   const handleSave = () => {
     const data = { ...editData };
@@ -108,12 +221,104 @@ export function CharacterSheet({
     }
 
     if (data.memories) {
-      data.memories = (data.memories as any[]).map(normalizeMemory);
+      const proficiencyBonus = getProficiencyBonus(data.totalSoulFragments ?? 0);
+      data.memories = (data.memories as any[]).map((memory) => normalizeMemory(memory, proficiencyBonus));
     }
+    data.echoes = serializeEchoes(data.echoes);
+    const nextStats = normalizeStats(data.stats);
+    for (const { key } of STAT_FIELDS) {
+      const raw = (statDrafts[key] ?? "").trim();
+      if (raw === "" || raw === "-") {
+        nextStats[key] = 0;
+        continue;
+      }
+      const parsed = Number.parseInt(raw, 10);
+      nextStats[key] = Number.isNaN(parsed) ? 0 : parsed;
+    }
+    data.stats = nextStats;
+    data.armorClass = Math.max(1, data.armorClass ?? character.armorClass ?? 8);
 
     updateChar.mutate({ id: character.id, updates: data }, {
       onSuccess: () => setIsEditing(false)
     });
+  };
+
+  const handleActivateSubAttribute = (attributeIndex: number, activeSubAttribute: string) => {
+    const attributes = displayAttributes.map((attribute, index) =>
+      index === attributeIndex ? { ...attribute, activeSubAttribute } : attribute,
+    );
+    updateChar.mutate({ id: character.id, updates: { attributes } });
+  };
+
+  const handleLearnSubAttribute = (attributeIndex: number) => {
+    const librarian = displayAttributes[attributeIndex];
+    if (!librarian?.subAttributes || !librarian.activeSubAttribute) return;
+    const learnedAttribute = librarian.subAttributes.find(
+      (attribute) => attribute.name === librarian.activeSubAttribute,
+    );
+    if (!learnedAttribute) return;
+
+    const attributes = displayAttributes.map((attribute, index) =>
+      index === attributeIndex
+        ? {
+            ...attribute,
+            subAttributes: attribute.subAttributes?.filter(
+              (choice) => choice.name !== learnedAttribute.name,
+            ),
+            activeSubAttribute: undefined,
+          }
+        : attribute,
+    );
+    attributes.push({ ...learnedAttribute, subAttributes: undefined, activeSubAttribute: undefined });
+    updateChar.mutate({ id: character.id, updates: { attributes } });
+  };
+
+  const handleStarSeekingFormChange = (attributeIndex: number, limbId: string, activeFormId: string) => {
+    const attribute = displayAttributes[attributeIndex];
+    const limb = attribute?.starSeeking?.limbs.find((candidate) => candidate.id === limbId);
+    if (!attribute?.starSeeking || !limb || limb.activeFormId === activeFormId) return;
+    const cost = Math.max(0, limb.transformEssenceCost);
+    const currentEssence = character.currentEssence ?? 0;
+    if (currentEssence < cost) {
+      alert(`Not enough Essence to transform Star Seeking. Required: ${cost}, Available: ${currentEssence}.`);
+      return;
+    }
+    const attributes = displayAttributes.map((candidate, index) =>
+      index === attributeIndex && candidate.starSeeking
+        ? {
+            ...candidate,
+            starSeeking: {
+              ...candidate.starSeeking,
+              limbs: candidate.starSeeking.limbs.map((candidateLimb) =>
+                candidateLimb.id === limbId ? { ...candidateLimb, activeFormId } : candidateLimb,
+              ),
+            },
+          }
+        : candidate,
+    );
+    updateChar.mutate({
+      id: character.id,
+      updates: {
+        attributes,
+        currentEssence: Math.max(0, currentEssence - cost),
+      },
+    });
+  };
+
+  const handleReforgeCountChange = (attributeIndex: number, monsterIndex: number, delta: number) => {
+    const attribute = displayAttributes[attributeIndex];
+    if (!attribute?.reforging) return;
+    const monsters = attribute.reforging.monsters.map((monster, index) => {
+      if (index !== monsterIndex) return monster;
+      const maximum = monster.totalRequired ?? Number.POSITIVE_INFINITY;
+      return { ...monster, reforgedCount: Math.max(0, Math.min(maximum, monster.reforgedCount + delta)) };
+    });
+    const attributes = displayAttributes.map((candidate, index) =>
+      index === attributeIndex && candidate.reforging
+        ? { ...candidate, reforging: { ...candidate.reforging, monsters } }
+        : candidate,
+    );
+    updateChar.mutate({ id: character.id, updates: { attributes } });
   };
 
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,10 +337,147 @@ export function CharacterSheet({
   };
 
   const memories = getMemories(character);
+  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+  const characterEchoes = normalizeEchoes(character.echoes);
+  const editEchoes = normalizeEchoes(editData.echoes);
+  const visibleEchoes = isEditing ? editEchoes : characterEchoes;
+  const characterStats = normalizeStats(character.stats);
+  const editStats = normalizeStats(editData.stats);
   const armorShield = getSummonedArmorDurability(character);
+  const starSeekingArmorBonus = getStarSeekingArmorBonus(displayAttributes);
+  const effectiveArmorClass = getEffectiveArmorClass(character) + starSeekingArmorBonus;
+  const baseArmorClass = getBaseArmorClass(character);
+  const armorDexterityMode = getArmorDexterityMode(character);
+  const dexterityBonus = getArmorDexterityBonus(characterStats.dexterity, armorDexterityMode);
 
   const instantUpdate = (updates: Partial<Character>) => {
     updateChar.mutate({ id: character.id, updates });
+  };
+
+  const commitManualCurrentHealth = () => {
+    if (!canEdit || isEditing) return;
+    const parsed = Number.parseInt(manualCurrentHealth, 10);
+    const next = Number.isNaN(parsed) ? character.currentHealth : parsed;
+    const clamped = Math.max(0, Math.min(character.maxHealth, next));
+    setManualCurrentHealth(String(clamped));
+    if (clamped !== character.currentHealth) {
+      instantUpdate({ currentHealth: clamped });
+    }
+  };
+
+  const setEditStatDraft = (key: keyof CharacterStats, value: string) => {
+    if (!/^-?\d*$/.test(value)) return;
+    setStatDrafts((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const commitEditStat = (key: keyof CharacterStats) => {
+    const raw = (statDrafts[key] ?? "").trim();
+    const parsed = raw === "" || raw === "-" ? 0 : Number.parseInt(raw, 10);
+    const value = Number.isNaN(parsed) ? 0 : parsed;
+
+    setEditData((prev) => {
+      const next = normalizeStats(prev.stats);
+      next[key] = value;
+      return { ...prev, stats: next };
+    });
+    setStatDrafts((prev) => ({ ...prev, [key]: String(value) }));
+  };
+
+  const handleAddEcho = () => {
+    if (!isEditing) return;
+    const name = newEchoDraft.name.trim();
+    if (!name) return;
+
+    const maxHealth = Math.max(1, newEchoDraft.maxHealth || 1);
+    const currentHealth = Math.max(0, Math.min(maxHealth, newEchoDraft.currentHealth));
+    const nextEcho: Echo = {
+      ...newEchoDraft,
+      name,
+      maxHealth,
+      currentHealth,
+      healRate: Math.max(0, newEchoDraft.healRate || 0),
+      summonCost: Math.max(0, newEchoDraft.summonCost || 0),
+      isSummoned: false,
+    };
+
+    setEditData((prev) => {
+      const current = normalizeEchoes(prev.echoes);
+      const nextEchoes = [...current, nextEcho];
+      return { ...prev, echoes: serializeEchoes(nextEchoes) };
+    });
+    setIsAddingEcho(false);
+    setNewEchoDraft(createDefaultEcho());
+  };
+
+  const handleSaveEchoAtIndex = (index: number, nextEcho: Echo) => {
+    if (isEditing) {
+      setEditData((prev) => {
+        const nextEchoes = normalizeEchoes(prev.echoes);
+        nextEchoes[index] = nextEcho;
+        return { ...prev, echoes: serializeEchoes(nextEchoes) };
+      });
+      return;
+    }
+
+    const nextEchoes = [...characterEchoes];
+    nextEchoes[index] = nextEcho;
+    instantUpdate({ echoes: serializeEchoes(nextEchoes) });
+  };
+
+  const handleDeleteEchoAtIndex = (index: number) => {
+    if (isEditing) {
+      setEditData((prev) => {
+        const nextEchoes = normalizeEchoes(prev.echoes);
+        nextEchoes.splice(index, 1);
+        return { ...prev, echoes: serializeEchoes(nextEchoes) };
+      });
+      return;
+    }
+
+    const nextEchoes = [...characterEchoes];
+    nextEchoes.splice(index, 1);
+    instantUpdate({ echoes: serializeEchoes(nextEchoes) });
+  };
+
+  const handleEchoSummonToggle = (echoIndex: number) => {
+    if (isEditing) return;
+    const echoes = [...characterEchoes];
+    const target = echoes[echoIndex];
+    if (!target) return;
+
+    const currentEssence = character.currentEssence ?? 0;
+    const summonCost = Math.max(0, target.summonCost ?? 0);
+
+    if (target.isSummoned) {
+      echoes[echoIndex] = { ...target, isSummoned: false };
+      instantUpdate({ echoes: serializeEchoes(echoes) });
+      return;
+    }
+
+    if (summonCost > currentEssence) {
+      alert(`Not enough Essence to summon ${target.name}. Required: ${summonCost}, Available: ${currentEssence}.`);
+      return;
+    }
+
+    echoes[echoIndex] = { ...target, isSummoned: true };
+    const updates: Partial<Character> = { echoes: serializeEchoes(echoes) };
+    if (summonCost > 0) {
+      updates.currentEssence = Math.max(0, currentEssence - summonCost);
+    }
+    instantUpdate(updates);
+  };
+
+  const handleEchoHealthChange = (echoIndex: number, delta: number) => {
+    if (isEditing) return;
+    const echoes = [...characterEchoes];
+    const target = echoes[echoIndex];
+    if (!target || !target.isSummoned) return;
+
+    const nextValue = Math.max(0, Math.min(target.maxHealth, target.currentHealth + delta));
+    if (nextValue === target.currentHealth) return;
+
+    echoes[echoIndex] = { ...target, currentHealth: nextValue };
+    instantUpdate({ echoes: serializeEchoes(echoes) });
   };
 
   const handleDamage = (amount: number) => {
@@ -162,32 +504,49 @@ export function CharacterSheet({
   const handleSummonToggle = (memIndex: number) => {
     const mems = [...memories];
     const mem = mems[memIndex];
+    const currentEssence = character.currentEssence ?? 0;
+    const summonCost = Math.max(0, mem.essenceCost ?? 0);
+
     if (mem.isSummoned) {
-      mems[memIndex] = { ...mem, isSummoned: false, currentDurability: mem.maxDurability };
+      mems[memIndex] = { ...mem, isSummoned: false };
+      instantUpdate({ memories: mems });
     } else {
-      mems.forEach((m, i) => {
-        if (m.memoryType === mem.memoryType && m.isSummoned) {
-          mems[i] = { ...m, isSummoned: false, currentDurability: m.maxDurability };
-        }
-      });
+      if (summonCost > currentEssence) {
+        alert(`Not enough Essence to summon ${mem.name}. Required: ${summonCost}, Available: ${currentEssence}.`);
+        return;
+      }
+
+      // Weapons and tools can be summoned in any quantity.
+      if (mem.memoryType !== "tool" && mem.memoryType !== "weapon") {
+        mems.forEach((m, i) => {
+          if (m.memoryType === mem.memoryType && m.isSummoned) {
+            mems[i] = { ...m, isSummoned: false };
+          }
+        });
+      }
       mems[memIndex] = { ...mem, isSummoned: true };
+      const updates: Partial<Character> = { memories: mems };
+      if (summonCost > 0) {
+        updates.currentEssence = Math.max(0, currentEssence - summonCost);
+      }
+      instantUpdate(updates);
     }
-    instantUpdate({ memories: mems });
   };
 
   const parseDieSides = (die: string): number => {
     return parseInt(die.replace("D", "")) || 6;
   };
 
-  const handleWeaponHit = (mem: Memory) => {
+  const handleWeaponHit = (mem: Memory, memoryIndex: number) => {
     if (!mem.weaponDamage) return;
     const d20 = Math.floor(Math.random() * 20) + 1;
-    const total = d20 + mem.weaponDamage.hitModifier;
-    const mod = mem.weaponDamage.hitModifier;
+    const proficiencyModifier = mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0;
+    const mod = mem.weaponDamage.hitModifier + proficiencyModifier;
+    const total = d20 + mod;
     const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
     const resultStr = `D20: ${d20} ${modStr}`;
 
-    setLastWeaponRoll({ type: "hit", result: resultStr, total });
+    setLastWeaponRoll({ type: "hit", result: resultStr, total, memoryIndex });
 
     const rollPayload: DiceRollPayload = {
       user: currentUser || "Unknown",
@@ -205,7 +564,7 @@ export function CharacterSheet({
     });
   };
 
-  const handleWeaponDamage = (mem: Memory) => {
+  const handleWeaponDamage = (mem: Memory, memoryIndex: number) => {
     if (!mem.weaponDamage) return;
     const { damageDie, diceCount, damageModifier } = mem.weaponDamage;
     const sides = parseDieSides(damageDie);
@@ -216,7 +575,7 @@ export function CharacterSheet({
     const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
     const resultStr = `${diceCount}${damageDie}: ${rolls.join(" + ")} ${modStr}`;
 
-    setLastWeaponRoll({ type: "damage", result: resultStr, total });
+    setLastWeaponRoll({ type: "damage", result: resultStr, total, memoryIndex });
 
     const rollPayload: DiceRollPayload = {
       user: `${currentUser} (${mem.name} Dmg)`,
@@ -228,6 +587,67 @@ export function CharacterSheet({
       }],
       total,
     };
+    sendWsMessage({ type: WS_EVENTS.DICE_ROLL, payload: rollPayload });
+  };
+
+  const handleEchoMoveHit = (
+    echo: Echo,
+    echoIndex: number,
+    move: Echo["damageMoves"][number],
+    moveIndex: number,
+  ) => {
+    const d20 = Math.floor(Math.random() * 20) + 1;
+    const total = d20 + move.hitModifier;
+    const modStr = move.hitModifier >= 0 ? `+${move.hitModifier}` : `${move.hitModifier}`;
+    const resultStr = `D20: ${d20} ${modStr}`;
+    const moveName = move.name || `Move ${moveIndex + 1}`;
+
+    setLastEchoMoveRoll({ type: "hit", result: resultStr, total, echoIndex, moveIndex });
+
+    const rollPayload: DiceRollPayload = {
+      user: currentUser || "Unknown",
+      results: [{
+        die: "D20",
+        sides: 20,
+        rolls: [d20],
+        subtotal: total,
+      }],
+      total,
+    };
+
+    sendWsMessage({
+      type: WS_EVENTS.DICE_ROLL,
+      payload: { ...rollPayload, user: `${currentUser || "Unknown"} (${echo.name} ${moveName} Hit)` },
+    });
+  };
+
+  const handleEchoMoveDamage = (
+    echo: Echo,
+    echoIndex: number,
+    move: Echo["damageMoves"][number],
+    moveIndex: number,
+  ) => {
+    const sides = parseDieSides(move.damageDie);
+    const rolls = Array.from({ length: Math.max(1, move.diceCount) }, () => Math.floor(Math.random() * sides) + 1);
+    const rollSum = rolls.reduce((acc, next) => acc + next, 0);
+    const total = rollSum + move.damageModifier;
+    const modStr = move.damageModifier >= 0 ? `+${move.damageModifier}` : `${move.damageModifier}`;
+    const resultStr = `${move.diceCount}${move.damageDie}: ${rolls.join(" + ")} ${modStr}`;
+    const moveName = move.name || `Move ${moveIndex + 1}`;
+
+    setLastEchoMoveRoll({ type: "damage", result: resultStr, total, echoIndex, moveIndex });
+
+    const rollPayload: DiceRollPayload = {
+      user: `${currentUser || "Unknown"} (${echo.name} ${moveName} Dmg)`,
+      results: [{
+        die: move.damageDie,
+        sides,
+        rolls,
+        subtotal: total,
+      }],
+      total,
+    };
+
     sendWsMessage({ type: WS_EVENTS.DICE_ROLL, payload: rollPayload });
   };
 
@@ -357,15 +777,37 @@ export function CharacterSheet({
                 </h4>
                 
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-3xl font-display font-bold text-foreground">
-                    {character.currentHealth} <span className="text-muted-foreground text-xl">/ {isEditing ? 
-                      <Input 
-                        type="number" 
-                        value={editData.maxHealth} 
-                        onChange={e => setEditData({...editData, maxHealth: parseInt(e.target.value) || 0})}
-                        className="w-16 inline-block h-8 px-2 text-center"
-                      /> : character.maxHealth}</span>
-                  </span>
+                  {isEditing ? (
+                    <span className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={editData.currentHealth ?? character.currentHealth}
+                        onChange={e => {
+                          const nextCurrent = Math.max(0, parseInt(e.target.value) || 0);
+                          const maxHealth = Math.max(0, editData.maxHealth ?? character.maxHealth);
+                          setEditData({ ...editData, currentHealth: Math.min(nextCurrent, maxHealth) });
+                        }}
+                        className="w-20 inline-block h-8 px-2 text-center"
+                        data-testid="input-current-health-edit"
+                      />
+                      <span className="text-muted-foreground text-xl">/</span>
+                      <Input
+                        type="number"
+                        value={editData.maxHealth ?? character.maxHealth}
+                        onChange={e => {
+                          const nextMax = Math.max(0, parseInt(e.target.value) || 0);
+                          const currentHealth = Math.min(editData.currentHealth ?? character.currentHealth, nextMax);
+                          setEditData({ ...editData, maxHealth: nextMax, currentHealth });
+                        }}
+                        className="w-20 inline-block h-8 px-2 text-center"
+                        data-testid="input-max-health-edit"
+                      />
+                    </span>
+                  ) : (
+                    <span className="text-3xl font-display font-bold text-foreground">
+                      {character.currentHealth} <span className="text-muted-foreground text-xl">/ {character.maxHealth}</span>
+                    </span>
+                  )}
                   {armorShield && (
                     <span className="text-sm font-bold text-sky-400 flex items-center gap-1" data-testid="text-armor-durability">
                       <Shield className="w-4 h-4" /> {armorShield.current}/{armorShield.max}
@@ -389,6 +831,28 @@ export function CharacterSheet({
                     />
                   )}
                 </div>
+
+                {!isEditing && canEdit && (
+                  <div className="mb-3">
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Current HP</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={character.maxHealth}
+                      value={manualCurrentHealth}
+                      onChange={e => setManualCurrentHealth(e.target.value)}
+                      onBlur={commitManualCurrentHealth}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitManualCurrentHealth();
+                        }
+                      }}
+                      className="mt-1 bg-black/50 border-white/10 h-8 w-24 text-center"
+                      data-testid="input-current-health-manual"
+                    />
+                  </div>
+                )}
 
                 <div className="flex gap-2">
                   <Button 
@@ -529,6 +993,40 @@ export function CharacterSheet({
                 </div>
 
                 <div>
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Armor Class</label>
+                  {isEditing ? (
+                    <div className="space-y-1">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={editData.armorClass ?? 8}
+                        onChange={e => setEditData({ ...editData, armorClass: Math.max(1, parseInt(e.target.value) || 1) })}
+                        className="mt-1 bg-black/50 border-white/10 w-24"
+                        data-testid="input-armor-class"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Final AC = Base + DEX ({editData.armorClass ?? 8} + {editStats.dexterity} = {(editData.armorClass ?? 8) + editStats.dexterity})
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-1">
+                      <p className="text-lg font-display text-amber-300" data-testid="text-armor-class">
+                        {effectiveArmorClass}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Base {baseArmorClass} + {armorDexterityMode === "full" ? "DEX" : armorDexterityMode === "half" ? "Half DEX" : "No DEX"} {dexterityBonus}{starSeekingArmorBonus > 0 ? ` + Star Seeking ${starSeekingArmorBonus}` : ""}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Proficiency Bonus</label>
+                  <p className="mt-1 font-display text-lg text-cyan-300">+{proficiencyBonus}</p>
+                  <p className="text-[10px] text-muted-foreground">Based on {character.totalSoulFragments ?? 0} total shards</p>
+                </div>
+
+                <div>
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{character.corePrefix || "Soul"} Core</label>
                   {isEditing ? (
                     <div className="space-y-2 mt-1">
@@ -552,16 +1050,237 @@ export function CharacterSheet({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Echoes</label>
-                  {isEditing ? (
-                    <Input 
-                      value={editData.echoes} 
-                      onChange={e => setEditData({...editData, echoes: e.target.value})}
-                      className="mt-1 bg-black/50 border-white/10"
-                    />
-                  ) : (
-                    <p className="text-md text-foreground mt-1">{character.echoes || <span className="text-muted-foreground italic">None</span>}</p>
-                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Echoes</label>
+                    {canEdit && isEditing && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsAddingEcho(true)}
+                        className="h-7 border-primary/30 text-primary hover:bg-primary/10"
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Add Echo
+                      </Button>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {visibleEchoes.length > 0 ? visibleEchoes.map((echo, i) => {
+                      const hpPercent = echo.maxHealth > 0 ? (echo.currentHealth / echo.maxHealth) * 100 : 0;
+                      return (
+                        <div key={i} className="space-y-2">
+                          <div className={`relative p-3 rounded-lg border transition-all ${
+                            echo.isSummoned
+                              ? "text-cyan-300 border-cyan-500/30 bg-cyan-500/10 shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400/30"
+                              : "bg-secondary/30 border-white/5 hover:bg-secondary/50 hover:border-white/10"
+                          }`}>
+                            <div className="flex items-start justify-between gap-2">
+                              {isEditing ? (
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Sparkles className="w-4 h-4 shrink-0" />
+                                    <p className="font-medium text-sm text-foreground truncate">{echo.name || `Echo ${i + 1}`}</p>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest border border-amber-400/30 bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded shrink-0">
+                                      AC {echo.armorClass}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <EchoPopup
+                                  echo={echo}
+                                  canEdit={canEdit}
+                                  onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
+                                  onDelete={() => handleDeleteEchoAtIndex(i)}
+                                >
+                                  <div className="flex-1 cursor-pointer min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Sparkles className="w-4 h-4 shrink-0" />
+                                      <p className="font-medium text-sm text-foreground truncate">{echo.name || `Echo ${i + 1}`}</p>
+                                      <span className="text-[10px] font-bold uppercase tracking-widest border border-amber-400/30 bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded shrink-0">
+                                        AC {echo.armorClass}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </EchoPopup>
+                              )}
+                              {canEdit && !isEditing && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEchoSummonToggle(i)}
+                                  className={`shrink-0 text-[10px] h-6 px-1.5 ${
+                                    echo.isSummoned
+                                      ? "border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                                      : "border-white/10 text-muted-foreground hover:bg-white/5"
+                                  }`}
+                                >
+                                  <Zap className="w-3 h-3 mr-1" />
+                                  {echo.isSummoned ? "Dismiss" : "Summon"}
+                                </Button>
+                              )}
+                            </div>
+
+                            <p className="text-xs text-muted-foreground truncate">
+                              {echo.description || "No description."}
+                            </p>
+
+                            <div className="grid grid-cols-3 gap-x-3 gap-y-1 mt-1.5">
+                              <div className="min-w-0">
+                                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Core</span>
+                                <p className="text-xs font-bold truncate">{echo.core}</p>
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Tier</span>
+                                <p className="text-xs font-bold truncate">{echo.tier}</p>
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Cost</span>
+                                <p className="text-xs font-bold truncate">{echo.summonCost}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Health</span>
+                                <span className="text-xs font-bold text-cyan-200">
+                                  {echo.currentHealth} / {echo.maxHealth}
+                                </span>
+                              </div>
+                              <div className="h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                                <div
+                                  className="h-full bg-cyan-400 transition-all duration-300"
+                                  style={{ width: `${hpPercent}%` }}
+                                />
+                              </div>
+                              {canEdit && !isEditing && echo.isSummoned && (
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10 h-7"
+                                    onClick={() => handleEchoHealthChange(i, -1)}
+                                    disabled={echo.currentHealth <= 0}
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-7"
+                                    onClick={() => handleEchoHealthChange(i, 1)}
+                                    disabled={echo.currentHealth >= echo.maxHealth}
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              )}
+                              {canEdit && !isEditing && echo.isSummoned && echo.damageMoves.length > 0 && (
+                                <div className="pt-2 border-t border-white/10 space-y-2">
+                                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Damaging Moves</span>
+                                  {echo.damageMoves.map((move, moveIndex) => (
+                                    <div key={moveIndex} className="space-y-2 rounded-md border border-white/10 bg-black/20 p-2">
+                                      <p className="text-xs font-medium leading-snug whitespace-normal break-words">
+                                        {move.name || `Move ${moveIndex + 1}`}
+                                      </p>
+                                      <div className="flex gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 h-7 px-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-[11px]"
+                                          onClick={() => handleEchoMoveHit(echo, i, move, moveIndex)}
+                                          data-testid={`button-echo-hit-${i}-${moveIndex}`}
+                                        >
+                                          <Crosshair className="w-3 h-3 mr-1" />
+                                          Hit DC
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 h-7 px-2 border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px]"
+                                          onClick={() => handleEchoMoveDamage(echo, i, move, moveIndex)}
+                                          data-testid={`button-echo-dmg-${i}-${moveIndex}`}
+                                        >
+                                          <Flame className="w-3 h-3 mr-1" />
+                                          Damage
+                                        </Button>
+                                      </div>
+                                      {lastEchoMoveRoll && lastEchoMoveRoll.echoIndex === i && lastEchoMoveRoll.moveIndex === moveIndex && (
+                                        <div className="text-center p-2 bg-black/40 rounded-lg border border-white/5">
+                                          <span className="text-xs text-muted-foreground uppercase tracking-widest">
+                                            {lastEchoMoveRoll.type === "hit" ? "Hit Roll" : "Damage Roll"}
+                                          </span>
+                                          <p className="text-sm text-foreground mt-1">{lastEchoMoveRoll.result}</p>
+                                          <p className="text-lg font-display font-bold text-primary mt-1">
+                                            = {lastEchoMoveRoll.total}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {isEditing && (
+                            <EchoPopup
+                              echo={echo}
+                              canEdit={canEdit}
+                              onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
+                              onDelete={() => handleDeleteEchoAtIndex(i)}
+                              startInEditMode
+                            >
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-7 border-primary/30 text-primary hover:bg-primary/10"
+                              >
+                                <Edit2 className="w-3 h-3 mr-1" /> Edit Echo
+                              </Button>
+                            </EchoPopup>
+                          )}
+                        </div>
+                      );
+                    }) : <p className="text-sm text-muted-foreground italic">None</p>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Block */}
+              <div className="bg-black/30 rounded-xl p-5 border border-white/5 space-y-4">
+                <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Stats</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  {[STAT_FIELDS.slice(0, 3), STAT_FIELDS.slice(3)].map((column, columnIndex) => (
+                    <div key={columnIndex} className="space-y-2">
+                      {column.map((stat) => (
+                        <div key={stat.key} className="rounded-md border border-primary/20 bg-black/30 px-2 py-2">
+                          <p className="text-[10px] uppercase tracking-widest text-primary/70">{stat.short}</p>
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              value={statDrafts[stat.key]}
+                              onChange={(e) => setEditStatDraft(stat.key, e.target.value)}
+                              onBlur={() => commitEditStat(stat.key)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitEditStat(stat.key);
+                                }
+                              }}
+                              className="h-8 mt-1 px-2 bg-black/40 border-primary/20 text-sm font-display text-primary"
+                              aria-label={stat.label}
+                              data-testid={`input-stat-${stat.key}`}
+                            />
+                          ) : (
+                            <p className="text-base font-display text-primary mt-1">{characterStats[stat.key]}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -679,25 +1398,90 @@ export function CharacterSheet({
 
               {/* Attributes & Memories Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
                 {/* Attributes */}
                 <div className="space-y-4">
                   <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Attributes</h3>
                   {isEditing ? (
-                    <TraitEditor 
-                      title="Edit Attributes" 
-                      traits={editData.attributes || []} 
-                      onChange={t => setEditData({...editData, attributes: t})} 
+                    <TraitEditor
+                      title="Edit Attributes"
+                      traits={editData.attributes || []}
+                      onChange={t => setEditData({ ...editData, attributes: t })}
                     />
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {character.attributes.length > 0 ? character.attributes.map((attr, i) => (
-                        <TraitPopup key={i} trait={attr}>
-                          <div className="p-3 bg-secondary/30 border border-white/5 rounded-lg cursor-pointer hover:bg-secondary/50 hover:border-white/10 transition-all">
-                            <p className="font-medium text-sm text-foreground">{attr.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
-                          </div>
-                        </TraitPopup>
+                      {displayAttributes.length > 0 ? displayAttributes.map((attr, i) => (
+                        attr.starSeeking ? (
+                          <StarSeekingPopup
+                            key={i}
+                            trait={attr}
+                            canRoll={canEdit}
+                            stats={characterStats}
+                            proficiencyBonus={proficiencyBonus}
+                            onChangeForm={canEdit ? (limbId, formId) => handleStarSeekingFormChange(i, limbId, formId) : undefined}
+                          >
+                            <div className="cursor-pointer rounded-lg border border-amber-300/40 bg-amber-400/10 p-3 shadow-[0_0_18px_rgba(251,191,36,0.14)] transition-all hover:border-amber-200/60 hover:bg-amber-400/15">
+                              <div className="flex items-center gap-2"><Star className="h-4 w-4 fill-amber-300/20 text-amber-300" /><p className="text-sm font-medium text-amber-200">{attr.name}</p></div>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">{attr.effect}</p>
+                              {(() => {
+                                const limb = getPrimaryStarSeekingLimb(attr);
+                                const activeForm = limb?.forms.find((form) => form.id === limb.activeFormId);
+                                return limb && activeForm ? (
+                                  <div className="ml-6 mt-2 flex items-center justify-between rounded-md border border-amber-300/20 bg-black/30 px-2.5 py-1.5">
+                                    <div><p className="text-[9px] uppercase tracking-widest text-amber-300/70">Manifested form</p><p className="text-xs font-medium text-foreground">{activeForm.name}</p></div>
+                                    <p className="font-display text-lg text-amber-200">+{activeForm.armorBonus} AC</p>
+                                  </div>
+                                ) : null;
+                              })()}
+                            </div>
+                          </StarSeekingPopup>
+                        ) : attr.reforging ? (
+                          <ReforgingPopup key={i} trait={attr} onChangeCount={canEdit ? (monsterIndex, delta) => handleReforgeCountChange(i, monsterIndex, delta) : undefined}>
+                            <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 shadow-[0_0_18px_rgba(239,68,68,0.14)] transition-all cursor-pointer hover:border-red-400/60 hover:bg-red-500/15">
+                              <div className="flex items-center gap-2"><Flame className="h-4 w-4 text-orange-400" /><p className="text-sm font-medium text-red-200">{attr.name}</p></div>
+                              {attr.effect && attr.effect.trim() !== "?" && <p className="mt-1 truncate text-xs text-muted-foreground">{attr.effect}</p>}
+                              <div className="ml-6 mt-2 flex items-center justify-between rounded-md border border-red-500/20 bg-black/30 px-2.5 py-1.5">
+                                <div className="min-w-0"><p className="text-[9px] uppercase tracking-widest text-orange-300/70">Goal</p><p className="truncate text-xs font-medium text-foreground">{attr.reforging.goalName || "Undiscovered"}</p></div>
+                                <div className="ml-3 flex shrink-0 items-center gap-1.5 text-red-200"><Anvil className="h-3.5 w-3.5" /><span className="font-display text-lg">{attr.reforging.goalNumber || "???"}</span></div>
+                              </div>
+                            </div>
+                          </ReforgingPopup>
+                        ) : attr.rememberedBy ? (
+                          <RememberedByPopup key={i} trait={attr}>
+                            <div className="p-3 bg-fuchsia-500/10 border border-fuchsia-400/40 rounded-lg cursor-pointer hover:bg-fuchsia-500/15 hover:border-fuchsia-300/60 transition-all shadow-[0_0_18px_rgba(232,121,249,0.12)]">
+                              <div className="flex items-center gap-2"><Fingerprint className="w-4 h-4 text-fuchsia-300" /><p className="font-medium text-sm text-fuchsia-200">{attr.name}</p></div>
+                              <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
+                              <div className="mt-2 ml-6 px-2.5 py-1.5 rounded-md bg-black/30 border border-fuchsia-400/20 flex items-center justify-between">
+                                <p className="text-[9px] uppercase tracking-widest text-fuchsia-300/70">THOSE WHO KNOW</p>
+                                <p className="font-display text-lg text-fuchsia-200">{attr.rememberedBy.length}</p>
+                              </div>
+                            </div>
+                          </RememberedByPopup>
+                        ) : attr.subAttributes ? (
+                          <ExpandedTraitPopup
+                            key={i}
+                            trait={attr}
+                            onActivate={canEdit ? (name) => handleActivateSubAttribute(i, name) : undefined}
+                            onLearn={canEdit && attr.activeSubAttribute ? () => handleLearnSubAttribute(i) : undefined}
+                          >
+                            <div className="p-3 bg-emerald-400/10 border border-emerald-300/40 rounded-lg cursor-pointer hover:bg-emerald-400/15 hover:border-emerald-200/60 transition-all shadow-[0_0_18px_rgba(110,231,183,0.14)]">
+                              <div className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-300" /><p className="font-medium text-sm text-emerald-200">{attr.name}</p></div>
+                              <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
+                              {attr.activeSubAttribute && (
+                                <div className="mt-2 ml-6 px-2.5 py-1.5 rounded-md bg-black/30 border border-emerald-300/20">
+                                  <p className="text-[9px] uppercase tracking-widest text-emerald-300/70">Active attribute</p>
+                                  <p className="text-xs font-medium text-foreground mt-0.5">{attr.activeSubAttribute}</p>
+                                </div>
+                              )}
+                            </div>
+                          </ExpandedTraitPopup>
+                        ) : (
+                          <TraitPopup key={i} trait={attr}>
+                            <div className="p-3 bg-secondary/30 border border-white/5 rounded-lg cursor-pointer hover:bg-secondary/50 hover:border-white/10 transition-all">
+                              <p className="font-medium text-sm text-foreground">{attr.name}</p>
+                              <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
+                            </div>
+                          </TraitPopup>
+                        )
                       )) : <p className="text-sm text-muted-foreground italic">None</p>}
                     </div>
                   )}
@@ -708,7 +1492,8 @@ export function CharacterSheet({
                   <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Memories</h3>
                   {isEditing ? (
                     <MemoryEditor
-                      memories={(editData.memories || []).map(normalizeMemory)}
+                      memories={(editData.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus))}
+                      proficiencyBonus={proficiencyBonus}
                       onChange={m => setEditData({...editData, memories: m})}
                     />
                   ) : (
@@ -716,6 +1501,7 @@ export function CharacterSheet({
                       {memories.length > 0 ? memories.map((mem, i) => {
                         const TypeIcon = MEMORY_TYPE_ICONS[mem.memoryType] || Wrench;
                         const colorClass = MEMORY_TYPE_COLORS[mem.memoryType] || MEMORY_TYPE_COLORS.tool;
+                        const memoryTypeLabel = mem.memoryType === "charm" ? "utility" : mem.memoryType;
                         return (
                           <div key={i} className={`relative p-3 rounded-lg border transition-all ${
                             mem.isSummoned
@@ -723,17 +1509,40 @@ export function CharacterSheet({
                               : "bg-secondary/30 border-white/5 hover:bg-secondary/50 hover:border-white/10"
                           }`}>
                             <div className="flex items-start justify-between gap-2">
-                              <TraitPopup trait={mem}>
+                              <TraitPopup
+                                trait={mem}
+                                contentClassName={MEMORY_DIALOG_CONTENT_CLASS}
+                                bodyClassName={MEMORY_DIALOG_BODY_CLASS}
+                              >
                                 <div className="flex-1 cursor-pointer min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <TypeIcon className="w-4 h-4 shrink-0" />
                                     <p className="font-medium text-sm text-foreground truncate">{mem.name}</p>
-                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">{mem.memoryType}</span>
+                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">{memoryTypeLabel}</span>
+                                    {(mem.memoryType === "weapon" || mem.memoryType === "armor") && (
+                                      <span className={`text-[9px] uppercase tracking-widest font-bold ${mem.isProficient ? "text-emerald-300" : "text-red-300"}`}>
+                                        {mem.isProficient ? `Proficient +${proficiencyBonus}` : "Not proficient"}
+                                      </span>
+                                    )}
                                   </div>
                                   <p className="text-xs text-muted-foreground truncate">{mem.effect}</p>
                                   <div className="flex items-center gap-2 mt-1.5">
                                     <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Durability</span>
                                     <span className="text-xs font-bold">{mem.currentDurability}/{mem.maxDurability}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-1.5">
+                                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Core</span>
+                                    <span className="text-xs font-bold">{mem.core}</span>
+                                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Tier</span>
+                                    <span className="text-xs font-bold">{mem.tier}</span>
+                                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Cost</span>
+                                    <span className="text-xs font-bold">{mem.essenceCost ?? 0}</span>
+                                    {mem.memoryType === "armor" && (
+                                      <>
+                                        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">AC</span>
+                                        <span className="text-xs font-bold">{getEffectiveMemoryArmorClass(mem)}</span>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               </TraitPopup>
@@ -754,29 +1563,29 @@ export function CharacterSheet({
                                 </Button>
                               )}
                             </div>
-                            {mem.isSummoned && mem.memoryType === "weapon" && mem.weaponDamage && canEdit && (
+                            {mem.isSummoned && mem.isDamageDealing && mem.weaponDamage && canEdit && (
                               <div className="mt-2 pt-2 border-t border-white/10 space-y-2">
                                 <div className="flex gap-2">
                                   <Button
                                     variant="outline"
                                     size="sm"
                                     className="flex-1 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-xs"
-                                    onClick={() => handleWeaponHit(mem)}
+                                    onClick={() => handleWeaponHit(mem, i)}
                                     data-testid={`button-weapon-hit-${i}`}
                                   >
-                                    <Crosshair className="w-3 h-3 mr-1" /> Hit (D20{mem.weaponDamage.hitModifier >= 0 ? "+" : ""}{mem.weaponDamage.hitModifier})
+                                    <Crosshair className="w-3 h-3 mr-1" /> Hit (D20{(mem.weaponDamage.hitModifier + (mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0)) >= 0 ? "+" : ""}{mem.weaponDamage.hitModifier + (mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0)})
                                   </Button>
                                   <Button
                                     variant="outline"
                                     size="sm"
                                     className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
-                                    onClick={() => handleWeaponDamage(mem)}
+                                    onClick={() => handleWeaponDamage(mem, i)}
                                     data-testid={`button-weapon-dmg-${i}`}
                                   >
                                     <Flame className="w-3 h-3 mr-1" /> Dmg ({mem.weaponDamage.diceCount}{mem.weaponDamage.damageDie}{mem.weaponDamage.damageModifier >= 0 ? "+" : ""}{mem.weaponDamage.damageModifier})
                                   </Button>
                                 </div>
-                                {lastWeaponRoll && (
+                                {lastWeaponRoll && lastWeaponRoll.memoryIndex === i && (
                                   <div className="text-center p-2 bg-black/40 rounded-lg border border-white/5">
                                     <span className="text-xs text-muted-foreground uppercase tracking-widest">
                                       {lastWeaponRoll.type === "hit" ? "Hit Roll" : "Damage Roll"}
@@ -795,7 +1604,29 @@ export function CharacterSheet({
                     </div>
                   )}
                 </div>
+              </div>
 
+              {/* Inventory / Notes */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Inventory/Notes</h3>
+                {isEditing ? (
+                  <Textarea
+                    value={editData.inventoryNotes ?? ""}
+                    onChange={e => setEditData({ ...editData, inventoryNotes: e.target.value })}
+                    className="bg-black/50 border-white/10 min-h-[180px]"
+                    placeholder="Track inventory, supplies, reminders, and session notes."
+                    data-testid="textarea-inventory-notes"
+                  />
+                ) : (
+                  <div
+                    className="min-h-[180px] p-4 bg-secondary/30 border border-white/5 rounded-lg text-sm leading-relaxed whitespace-pre-wrap"
+                    data-testid="text-inventory-notes"
+                  >
+                    {(character.inventoryNotes || "").trim() || (
+                      <span className="text-muted-foreground italic">None</span>
+                    )}
+                  </div>
+                )}
               </div>
 
             </div>
@@ -838,6 +1669,157 @@ export function CharacterSheet({
             </AlertDialog>
           </div>}
         </div>
+
+        <Dialog
+          open={isAddingEcho}
+          onOpenChange={(openState) => {
+            if (openState) {
+              setIsAddingEcho(true);
+              return;
+            }
+            setIsAddingEcho(false);
+            setNewEchoDraft(createDefaultEcho());
+          }}
+        >
+          <DialogContent className={ECHO_ADD_CONTENT_CLASS}>
+            <div className="flex h-full min-h-0 flex-col">
+              <DialogHeader className="px-6 pt-6 pb-3 border-b border-white/10">
+                <DialogTitle className="font-display text-xl text-primary">Add Echo</DialogTitle>
+              </DialogHeader>
+              <div className={ECHO_ADD_BODY_CLASS}>
+                <Input
+                  placeholder="Echo Name"
+                  value={newEchoDraft.name}
+                  onChange={e => setNewEchoDraft({ ...newEchoDraft, name: e.target.value })}
+                  className="bg-black/50"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Core</label>
+                    <Select
+                      value={newEchoDraft.core}
+                      onValueChange={(v) => setNewEchoDraft({ ...newEchoDraft, core: v as Echo["core"] })}
+                    >
+                      <SelectTrigger className="bg-black/50 border-white/10 h-8 text-sm mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MEMORY_CORES.map((core) => (
+                          <SelectItem key={core} value={core}>{core}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Tier</label>
+                    <Select
+                      value={String(newEchoDraft.tier)}
+                      onValueChange={(v) => {
+                        const tier = Math.max(1, Math.min(7, parseInt(v, 10) || 1));
+                        setNewEchoDraft({ ...newEchoDraft, tier });
+                      }}
+                    >
+                      <SelectTrigger className="bg-black/50 border-white/10 h-8 text-sm mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MEMORY_TIERS.map((tier) => (
+                          <SelectItem key={tier} value={String(tier)}>{tier}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Armor Class</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newEchoDraft.armorClass}
+                      onChange={e => setNewEchoDraft({ ...newEchoDraft, armorClass: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="bg-black/50 h-8 text-sm mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Summon Cost</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newEchoDraft.summonCost}
+                      onChange={e => setNewEchoDraft({ ...newEchoDraft, summonCost: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="bg-black/50 h-8 text-sm mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Heal Rate</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newEchoDraft.healRate}
+                      onChange={e => setNewEchoDraft({ ...newEchoDraft, healRate: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="bg-black/50 h-8 text-sm mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Max Health</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={newEchoDraft.maxHealth}
+                      onChange={e => {
+                        const maxHealth = Math.max(1, parseInt(e.target.value) || 1);
+                        const currentHealth = Math.min(newEchoDraft.currentHealth, maxHealth);
+                        setNewEchoDraft({ ...newEchoDraft, maxHealth, currentHealth });
+                      }}
+                      className="bg-black/50 h-8 text-sm mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Current Health</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={newEchoDraft.maxHealth}
+                      value={newEchoDraft.currentHealth}
+                      onChange={e => {
+                        const parsed = Math.max(0, parseInt(e.target.value) || 0);
+                        setNewEchoDraft({ ...newEchoDraft, currentHealth: Math.min(parsed, newEchoDraft.maxHealth) });
+                      }}
+                      className="bg-black/50 h-8 text-sm mt-1"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Description</label>
+                  <Textarea
+                    placeholder="Echo Description"
+                    value={newEchoDraft.description}
+                    onChange={e => setNewEchoDraft({ ...newEchoDraft, description: e.target.value })}
+                    className="bg-black/50 min-h-[180px] mt-1 whitespace-pre-wrap"
+                  />
+                </div>
+              </div>
+              <DialogFooter className="px-6 py-4 border-t border-white/10">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsAddingEcho(false);
+                    setNewEchoDraft(createDefaultEcho());
+                  }}
+                  className="border-white/10 hover:bg-white/5"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddEcho}
+                  disabled={!newEchoDraft.name.trim()}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  Confirm Add
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

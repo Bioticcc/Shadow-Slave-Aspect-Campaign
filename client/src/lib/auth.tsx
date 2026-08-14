@@ -1,54 +1,91 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { ACCOUNTS } from "@shared/schema";
 
 interface AuthContextType {
   currentUser: string | null;
   isDM: boolean;
-  login: (username: string, password: string) => boolean;
-  logout: () => void;
+  isLoading: boolean;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   isDM: false,
-  login: () => false,
-  logout: () => {},
+  isLoading: true,
+  login: async () => false,
+  logout: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem("campaign_user");
-    if (stored) {
-      const account = ACCOUNTS.find(a => a.username === stored);
-      if (account) {
-        setCurrentUser(stored);
-      } else {
-        localStorage.removeItem("campaign_user");
+    let mounted = true;
+
+    async function loadSessionUser() {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (!res.ok) {
+          if (mounted) setCurrentUser(null);
+          return;
+        }
+        const data = await res.json() as { user: string | null };
+        if (mounted) {
+          setCurrentUser(data.user || null);
+        }
+      } catch (_err) {
+        if (mounted) setCurrentUser(null);
+      } finally {
+        if (mounted) setIsLoading(false);
       }
     }
+
+    loadSessionUser();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const login = (username: string, password: string): boolean => {
-    const account = ACCOUNTS.find(
-      a => a.username.toLowerCase() === username.toLowerCase() && a.password === password
-    );
-    if (account) {
-      localStorage.setItem("campaign_user", account.username);
-      setCurrentUser(account.username);
+  const login = async (username: string, password: string): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) return false;
+
+      const data = await res.json() as { user: string };
+      setCurrentUser(data.user);
       return true;
+    } catch (_err) {
+      return false;
     }
-    return false;
   };
 
-  const logout = () => {
-    localStorage.removeItem("campaign_user");
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (_err) {}
     setCurrentUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, isDM: currentUser === "DM", login, logout }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        isDM: currentUser === "DM",
+        isLoading,
+        login,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

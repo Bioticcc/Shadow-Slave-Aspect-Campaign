@@ -2,9 +2,13 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { sessionMiddleware } from "./auth";
+import { blockSuspiciousPaths, createRateLimiter } from "./security";
 
 const app = express();
 const httpServer = createServer(app);
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
 
 declare module "http" {
   interface IncomingMessage {
@@ -12,16 +16,28 @@ declare module "http" {
   }
 }
 
+app.use(blockSuspiciousPaths);
+
 app.use(
   express.json({
-    limit: "50mb",
+    limit: "10mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false, limit: "50mb" }));
+app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+
+app.use(sessionMiddleware);
+app.use(
+  "/api",
+  createRateLimiter({
+    windowMs: 1000 * 60,
+    max: 180,
+    message: "Rate limit exceeded. Slow down and try again.",
+  }),
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -37,23 +53,11 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
+      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
     }
   });
 

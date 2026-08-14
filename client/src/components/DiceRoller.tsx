@@ -44,13 +44,14 @@ export function DiceRoller() {
 
   useEffect(() => {
     return onDiceRoll((payload: DiceRollPayload) => {
+      if (payload.user === currentUser) return;
       const entry: DisplayResult = { ...payload, id: nextId++ };
       setIncomingRolls(prev => [entry, ...prev].slice(0, 5));
       setTimeout(() => {
         setIncomingRolls(prev => prev.filter(r => r.id !== entry.id));
       }, 12000);
     });
-  }, []);
+  }, [currentUser]);
 
   const adjustDie = (name: string, delta: number) => {
     setSelected(prev => {
@@ -82,6 +83,7 @@ export function DiceRoller() {
         }
       }
       setResults(rollResults);
+      setSelected({});
       setIsRolling(false);
 
       const total = rollResults.reduce((a, r) => a + r.subtotal, 0);

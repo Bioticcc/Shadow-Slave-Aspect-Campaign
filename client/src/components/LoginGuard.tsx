@@ -10,11 +10,14 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
-  const { currentUser, login } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const { currentUser, login, isLoading } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = login(username, password);
+    if (submitting) return;
+    setSubmitting(true);
+    const success = await login(username, password);
     if (success) {
       setError(false);
       setUsername("");
@@ -23,10 +26,19 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
       setError(true);
       setPassword("");
     }
+    setSubmitting(false);
   };
 
   if (currentUser) {
     return <>{children}</>;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -73,9 +85,10 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
           <Button
             type="submit"
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            disabled={submitting}
             data-testid="button-login"
           >
-            Enter the Realm
+            {submitting ? "Opening..." : "Enter the Realm"}
           </Button>
           <div className="flex flex-wrap gap-2 justify-center pt-2">
             {ACCOUNTS.map(a => (
@@ -96,7 +109,7 @@ export function LogoutButton() {
     <Button
       variant="ghost"
       size="sm"
-      onClick={logout}
+      onClick={() => { void logout(); }}
       className="text-muted-foreground hover:text-foreground gap-1.5"
       data-testid="button-logout"
     >

@@ -61,6 +61,67 @@ export const api = {
       },
     },
   },
+  campaign: {
+    state: {
+      method: "GET" as const,
+      path: "/api/campaign/state" as const,
+      responses: {
+        200: z.object({
+          dayCount: z.number().int().min(1),
+        }),
+      },
+    },
+    updateDay: {
+      method: "POST" as const,
+      path: "/api/campaign/day" as const,
+      input: z.object({
+        delta: z.union([z.literal(-1), z.literal(1)]),
+      }),
+      responses: {
+        200: z.object({
+          dayCount: z.number().int().min(1),
+        }),
+        403: errorSchemas.notFound,
+      },
+    },
+    setDay: {
+      method: "POST" as const,
+      path: "/api/campaign/day-set" as const,
+      input: z.object({
+        dayCount: z.coerce.number().int().min(1),
+      }),
+      responses: {
+        200: z.object({
+          dayCount: z.number().int().min(1),
+        }),
+        403: errorSchemas.notFound,
+      },
+    },
+    passHour: {
+      method: "POST" as const,
+      path: "/api/campaign/hour-pass" as const,
+      responses: {
+        200: z.object({
+          updatedCharacterIds: z.array(z.number().int()),
+          message: z.string(),
+        }),
+        403: errorSchemas.notFound,
+      },
+    },
+    undo: {
+      method: "POST" as const,
+      path: "/api/campaign/undo" as const,
+      responses: {
+        200: z.object({
+          actionType: z.string(),
+          dayCount: z.number().int().min(1),
+          updatedCharacterIds: z.array(z.number().int()),
+          message: z.string(),
+        }),
+        404: errorSchemas.notFound,
+      },
+    },
+  },
 };
 
 export function buildUrl(path: string, params?: Record<string, string | number>): string {
@@ -79,3 +140,4 @@ export type CharacterInput = z.infer<typeof api.characters.create.input>;
 export type CharacterUpdateInput = z.infer<typeof api.characters.update.input>;
 export type CharacterResponse = z.infer<typeof api.characters.create.responses[201]>;
 export type CharacterListResponse = z.infer<typeof api.characters.list.responses[200]>;
+export type CampaignStateResponse = z.infer<typeof api.campaign.state.responses[200]>;

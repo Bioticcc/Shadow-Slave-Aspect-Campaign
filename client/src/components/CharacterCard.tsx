@@ -1,15 +1,41 @@
 import { useState } from "react";
-import { type Character, type Memory, normalizeMemory } from "@shared/schema";
+import {
+  type Character,
+  type Echo,
+  type Memory,
+  getArmorDexterityBonus,
+  getEffectiveMemoryArmorClass,
+  getProficiencyBonus,
+  normalizeEchoes,
+  normalizeMemory,
+  normalizeStats,
+  serializeEchoes,
+} from "@shared/schema";
 import { useUpdateCharacter } from "@/hooks/use-characters";
 import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Minus, Plus, Shield, Droplets } from "lucide-react";
+import { Minus, Plus, Shield, Droplets, Sparkles } from "lucide-react";
 import { CharacterSheet } from "./CharacterSheet";
 import { motion } from "framer-motion";
+import { getStarSeekingArmorBonus, normalizeExpandedAttributes } from "@/lib/expanded-attributes";
 
 function getMemories(character: Character): Memory[] {
-  return (character.memories || []).map(normalizeMemory);
+  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+  return (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
+}
+
+function getEchoes(character: Character): Echo[] {
+  return normalizeEchoes(character.echoes);
+}
+
+function getEffectiveArmorClass(character: Character, memories: Memory[]): number {
+  const dexterity = normalizeStats(character.stats).dexterity;
+  const summonedArmor = memories.find((m) => m.memoryType === "armor" && m.isSummoned);
+  const baseAc = summonedArmor ? getEffectiveMemoryArmorClass(summonedArmor) : (character.armorClass ?? 8);
+  const dexterityBonus = getArmorDexterityBonus(dexterity, summonedArmor?.armorDexterityBonus ?? "full");
+  const attributeBonus = getStarSeekingArmorBonus(normalizeExpandedAttributes(character));
+  return Math.max(1, baseAc) + dexterityBonus + attributeBonus;
 }
 
 export function CharacterCard({ character }: { character: Character }) {
@@ -17,6 +43,10 @@ export function CharacterCard({ character }: { character: Character }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const updateChar = useUpdateCharacter();
   const memories = getMemories(character);
+  const echoes = getEchoes(character);
+  const summonedEchoes = echoes
+    .map((echo, index) => ({ echo, index }))
+    .filter(({ echo }) => echo.isSummoned);
   const summonedArmor = memories.find(m => m.memoryType === "armor" && m.isSummoned);
 
   const handleHeal = (e: React.MouseEvent) => {
@@ -73,11 +103,31 @@ export function CharacterCard({ character }: { character: Character }) {
     }
   };
 
+  const handleEchoHealthChange = (e: React.MouseEvent, echoIndex: number, delta: number) => {
+    e.stopPropagation();
+    if (!canEdit) return;
+
+    const nextEchoes = [...echoes];
+    const target = nextEchoes[echoIndex];
+    if (!target || !target.isSummoned) return;
+
+    const nextHealth = Math.max(0, Math.min(target.maxHealth, target.currentHealth + delta));
+    if (nextHealth === target.currentHealth) return;
+
+    nextEchoes[echoIndex] = { ...target, currentHealth: nextHealth };
+    updateChar.mutate({
+      id: character.id,
+      updates: { echoes: serializeEchoes(nextEchoes) },
+    });
+  };
+
   const healthPercent = (character.currentHealth / character.maxHealth) * 100;
   const isLowHealth = healthPercent <= 25;
   const essenceCurrent = character.currentEssence ?? 0;
   const essenceMax = character.maxEssence ?? 10;
   const essencePercent = essenceMax > 0 ? (essenceCurrent / essenceMax) * 100 : 0;
+  const armorClass = getEffectiveArmorClass(character, memories);
+  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
   const canEdit = isDM || currentUser === character.owner;
 
   return (
@@ -118,6 +168,19 @@ export function CharacterCard({ character }: { character: Character }) {
                 <Shield className="w-3 h-3" /> HP
               </span>
               <div className="flex items-center gap-2">
+                <span
+                  className="text-[10px] font-bold text-amber-300 border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 rounded"
+                  data-testid={`text-card-ac-${character.id}`}
+                >
+                  AC {armorClass}
+                </span>
+                <span
+                  className="text-[10px] font-bold text-cyan-300 border border-cyan-400/25 bg-cyan-500/10 px-1.5 py-0.5 rounded"
+                  title={`Proficiency bonus from ${character.totalSoulFragments ?? 0} total shards`}
+                  data-testid={`text-card-proficiency-${character.id}`}
+                >
+                  PB +{proficiencyBonus}
+                </span>
                 {summonedArmor && (
                   <span className="text-[10px] font-bold text-sky-400 flex items-center gap-0.5" data-testid={`text-card-armor-${character.id}`}>
                     <Shield className="w-3 h-3" /> {summonedArmor.currentDurability}/{summonedArmor.maxDurability}
@@ -206,6 +269,65 @@ export function CharacterCard({ character }: { character: Character }) {
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
+
+            {summonedEchoes.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-cyan-500/20 space-y-2">
+                <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-cyan-300">
+                  <Sparkles className="w-3 h-3" /> Summoned Echoes
+                </div>
+                <div className="space-y-2">
+                  {summonedEchoes.map(({ echo, index }) => {
+                    const hpPercent = echo.maxHealth > 0 ? (echo.currentHealth / echo.maxHealth) * 100 : 0;
+                    return (
+                      <div
+                        key={`echo-${index}`}
+                        className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-8 h-8 rounded-full border border-cyan-300/40 bg-cyan-900/50 text-cyan-100 flex items-center justify-center text-xs font-bold shrink-0">
+                              {(echo.name || "E").slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-cyan-100 truncate">{echo.name || `Echo ${index + 1}`}</p>
+                              <p className="text-[10px] text-cyan-300/80">HP {echo.currentHealth}/{echo.maxHealth}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 w-6 p-0 border-destructive/40 text-destructive hover:bg-destructive/10"
+                              onClick={(event) => handleEchoHealthChange(event, index, -1)}
+                              disabled={!canEdit || echo.currentHealth <= 0 || updateChar.isPending}
+                              data-testid={`button-card-echo-dmg-${character.id}-${index}`}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 w-6 p-0 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                              onClick={(event) => handleEchoHealthChange(event, index, 1)}
+                              disabled={!canEdit || echo.currentHealth >= echo.maxHealth || updateChar.isPending}
+                              data-testid={`button-card-echo-heal-${character.id}-${index}`}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="mt-2 h-1.5 bg-black/60 rounded-full overflow-hidden border border-cyan-500/20">
+                          <div
+                            className="h-full bg-cyan-400 transition-all duration-300"
+                            style={{ width: `${hpPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>

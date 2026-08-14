@@ -47,6 +47,16 @@ export function CreateCharacterDialog() {
       soulCore: "Dormant",
       currentHealth: 8,
       maxHealth: 8,
+      armorClass: 8,
+      stats: {
+        strength: 0,
+        dexterity: 0,
+        constitution: 0,
+        intelligence: 0,
+        wisdom: 0,
+        charisma: 0,
+      },
+      inventoryNotes: "",
       owner: currentUser || "DM",
     }, {
       onSuccess: () => {

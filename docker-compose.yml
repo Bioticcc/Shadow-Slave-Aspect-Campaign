@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: dnd-board-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dnd_board
+      POSTGRES_USER: dnd_user
+      POSTGRES_PASSWORD: dnd_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - dnd_board_pgdata:/var/lib/postgresql/data
+
+volumes:
+  dnd_board_pgdata:
