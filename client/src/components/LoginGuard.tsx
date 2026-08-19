@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { ACCOUNTS } from "@shared/schema";
 
 export function LoginGuard({ children }: { children: React.ReactNode }) {
+  const [accessCode, setAccessCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
@@ -17,9 +18,10 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     if (submitting) return;
     setSubmitting(true);
-    const success = await login(username, password);
+    const success = await login(accessCode, username, password);
     if (success) {
       setError(false);
+      setAccessCode("");
       setUsername("");
       setPassword("");
     } else {
@@ -52,6 +54,21 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
         <form onSubmit={handleLogin} className="space-y-4 pt-4">
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Campaign Access Code
+            </label>
+            <Input
+              type="password"
+              value={accessCode}
+              onChange={(e) => { setAccessCode(e.target.value); setError(false); }}
+              className={`bg-black/50 border-white/10 focus-visible:ring-primary ${error ? "border-destructive animate-shake" : ""}`}
+              placeholder="Shared by your host"
+              autoComplete="off"
+              autoFocus
+              data-testid="input-access-code"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Username
             </label>
             <Input
@@ -60,7 +77,7 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
               onChange={(e) => { setUsername(e.target.value); setError(false); }}
               className={`bg-black/50 border-white/10 focus-visible:ring-primary ${error ? "border-destructive animate-shake" : ""}`}
               placeholder="Your name"
-              autoFocus
+              autoComplete="username"
               data-testid="input-username"
             />
           </div>
@@ -74,11 +91,12 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
               onChange={(e) => { setPassword(e.target.value); setError(false); }}
               className={`bg-black/50 border-white/10 focus-visible:ring-primary ${error ? "border-destructive animate-shake" : ""}`}
               placeholder="••••••••"
+              autoComplete="current-password"
               data-testid="input-password"
             />
             {error && (
               <p className="text-xs text-destructive font-medium">
-                Invalid credentials. The weave rejects you.
+                Invalid access code or account credentials. The weave rejects you.
               </p>
             )}
           </div>

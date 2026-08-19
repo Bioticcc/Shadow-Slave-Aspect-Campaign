@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { createHash, timingSafeEqual } from "crypto";
 import session from "express-session";
 import MemoryStoreFactory from "memorystore";
 import { ACCOUNTS, type AccountUsername } from "@shared/schema";
@@ -23,6 +24,22 @@ declare global {
 }
 
 const MemoryStore = MemoryStoreFactory(session);
+
+const configuredCampaignAccessCode = process.env.CAMPAIGN_ACCESS_CODE?.trim();
+if (!configuredCampaignAccessCode) {
+  throw new Error(
+    "CAMPAIGN_ACCESS_CODE must be set before starting the server.",
+  );
+}
+const campaignAccessCode: string = configuredCampaignAccessCode;
+
+function hashSecret(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
+}
+
+export function isCampaignAccessCodeValid(candidate: string): boolean {
+  return timingSafeEqual(hashSecret(candidate), hashSecret(campaignAccessCode));
+}
 
 function getSessionSecret(): string {
   const fromEnv = process.env.SESSION_SECRET?.trim();

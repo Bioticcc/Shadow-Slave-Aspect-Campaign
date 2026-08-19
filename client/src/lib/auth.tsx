@@ -4,7 +4,7 @@ interface AuthContextType {
   currentUser: string | null;
   isDM: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (accessCode: string, username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -48,13 +48,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (
+    accessCode: string,
+    username: string,
+    password: string,
+  ): Promise<boolean> => {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ accessCode, username, password }),
       });
       if (!res.ok) return false;
 

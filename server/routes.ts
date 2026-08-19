@@ -26,6 +26,7 @@ import {
   authenticateUser,
   canManageCharacter,
   getSessionUser,
+  isCampaignAccessCodeValid,
   requireAuth,
   sessionMiddleware,
 } from "./auth";
@@ -122,6 +123,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   const loginSchema = z.object({
+    accessCode: z.string().min(1).max(256),
     username: z.string().trim().min(1).max(64),
     password: z.string().min(1).max(128),
   });
@@ -150,6 +152,10 @@ export async function registerRoutes(
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: "Invalid login payload" });
+    }
+
+    if (!isCampaignAccessCodeValid(parsed.data.accessCode)) {
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const user = authenticateUser(parsed.data.username, parsed.data.password);
