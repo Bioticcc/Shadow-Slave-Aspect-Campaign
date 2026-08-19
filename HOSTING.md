@@ -1,5 +1,41 @@
 # Hosting guide
 
+## Quick hosting runbook
+
+Run the production app from Bash:
+
+```bash
+cd /home/jeezu/dndBoardREPLIT/Dnd-Game-Board/Dnd-Game-Board
+docker compose up -d
+set -a
+source .env
+set +a
+npm run build
+npm run start
+```
+
+For local testing only, use `npm run dev`. Do not use the development server with
+the public Funnel.
+
+When WSL's IP changes, refresh the proxy from an Administrator PowerShell window:
+
+```powershell
+$wslIp = (wsl hostname -I).Trim().Split(' ')[0]
+netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=5000
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=5000 connectaddress=$wslIp connectport=5000
+netsh interface portproxy show v4tov4
+```
+
+Open and verify the Funnel:
+
+```bash
+tailscale status
+tailscale funnel 5000
+tailscale funnel status
+```
+
+Share the resulting `*.ts.net` URL with the group.
+
 ## Prerequisites
 
 - Node.js 20+

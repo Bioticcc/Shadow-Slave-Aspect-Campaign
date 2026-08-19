@@ -54,21 +54,6 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
         <form onSubmit={handleLogin} className="space-y-4 pt-4">
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Campaign Access Code
-            </label>
-            <Input
-              type="password"
-              value={accessCode}
-              onChange={(e) => { setAccessCode(e.target.value); setError(false); }}
-              className={`bg-black/50 border-white/10 focus-visible:ring-primary ${error ? "border-destructive animate-shake" : ""}`}
-              placeholder="Shared by your host"
-              autoComplete="off"
-              autoFocus
-              data-testid="input-access-code"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Username
             </label>
             <Input
@@ -78,6 +63,7 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
               className={`bg-black/50 border-white/10 focus-visible:ring-primary ${error ? "border-destructive animate-shake" : ""}`}
               placeholder="Your name"
               autoComplete="username"
+              autoFocus
               data-testid="input-username"
             />
           </div>
@@ -93,6 +79,20 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
               placeholder="••••••••"
               autoComplete="current-password"
               data-testid="input-password"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Campaign Access Code
+            </label>
+            <Input
+              type="password"
+              value={accessCode}
+              onChange={(e) => { setAccessCode(e.target.value); setError(false); }}
+              className={`bg-black/50 border-white/10 focus-visible:ring-primary ${error ? "border-destructive animate-shake" : ""}`}
+              placeholder="Shared by your host"
+              autoComplete="off"
+              data-testid="input-access-code"
             />
             {error && (
               <p className="text-xs text-destructive font-medium">

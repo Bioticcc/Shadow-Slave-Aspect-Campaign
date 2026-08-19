@@ -10,9 +10,18 @@ It includes the same five informal accounts—Tien, Marlin, Nico, Ambrose, and D
 a trusted friend group can distinguish character ownership. The DM account can
 manage every character; the other accounts manage their own characters.
 
+| Username | Password | Access |
+| --- | --- | --- |
+| Tien | `Cleric` | Own characters |
+| Marlin | `Bard` | Own characters |
+| Nico | `Ranger` | Own characters |
+| Ambrose | `Elantrian` | Own characters |
+| DM | `Wit` | All characters |
+
 Every installation must define a private `CAMPAIGN_ACCESS_CODE` in `.env`. The host
 shares that code only with players invited to that campaign. It prevents visitors
 to a public tunnel from authenticating with only the built-in credentials.
+The code may be short—a six-digit code is suitable for a trusted friend group.
 `SESSION_SECRET` is a separate host-only value and should never be shared.
 
 ## Features
