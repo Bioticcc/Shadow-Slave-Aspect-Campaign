@@ -22,23 +22,44 @@ type RoundLogEntry = RoundLogDiceEntry | RoundLogSystemEntry;
 
 let nextRoundLogId = 0;
 
-function formatDiceRolled(payload: DiceRollPayload): string {
+function getRollCategory(payload: DiceRollPayload): "Dice" | "Check" | "Save" {
+  if (payload.results?.some((result) => result.label?.endsWith(" Save"))) return "Save";
+  if (payload.results?.some((result) => result.label)) return "Check";
+  return "Dice";
+}
+
+function formatModifier(modifier: number): string {
+  return modifier >= 0 ? `+${modifier}` : String(modifier);
+}
+
+function formatRollName(payload: DiceRollPayload): string {
   if (!payload.results?.length) return "None";
-  return payload.results.map((r) => `${r.rolls.length}${r.die}`).join(" + ");
+  return payload.results.map((result) => {
+    if (result.label) {
+      const modifier = result.modifier === undefined ? "" : ` ${formatModifier(result.modifier)}`;
+      return `${result.label} (${result.die}${modifier})`;
+    }
+    return `${result.rolls.length}${result.die}`;
+  }).join(" + ");
 }
 
 function formatResultBreakdown(payload: DiceRollPayload): string {
   if (!payload.results?.length) return String(payload.total ?? 0);
   return payload.results
-    .map((r) => `${r.rolls.join(" + ")}${r.rolls.length > 1 ? ` = ${r.subtotal}` : ""}`)
+    .map((result) => {
+      const modifier = result.modifier === undefined ? "" : ` ${formatModifier(result.modifier)}`;
+      const showSubtotal = result.rolls.length > 1 || result.modifier !== undefined;
+      return `${result.rolls.join(" + ")}${modifier}${showSubtotal ? ` = ${result.subtotal}` : ""}`;
+    })
     .join(" | ");
 }
 
 interface RoundLogPanelProps {
   leftControls?: ReactNode;
+  diceRollerOpen?: boolean;
 }
 
-export function RoundLogPanel({ leftControls }: RoundLogPanelProps) {
+export function RoundLogPanel({ leftControls, diceRollerOpen = false }: RoundLogPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [entries, setEntries] = useState<RoundLogEntry[]>([]);
 
@@ -74,7 +95,14 @@ export function RoundLogPanel({ leftControls }: RoundLogPanelProps) {
 
   return (
     <>
-      <div className="fixed top-24 right-6 bottom-24 z-40 pointer-events-none flex items-stretch">
+      <div
+        className="fixed top-24 bottom-24 z-40 pointer-events-none flex items-stretch transition-[right] duration-300"
+        style={{
+          right: diceRollerOpen
+            ? "calc(min(52rem, calc(100vw - 3rem)) + 2.25rem)"
+            : "1.5rem",
+        }}
+      >
         <div
           className={`pointer-events-auto w-[360px] max-w-[85vw] glass-panel rounded-xl border border-white/10 overflow-hidden transition-all duration-300 ${
             isOpen ? "translate-x-0 opacity-100" : "translate-x-[120%] opacity-0"
@@ -109,7 +137,10 @@ export function RoundLogPanel({ leftControls }: RoundLogPanelProps) {
                   >
                     <p className="text-sm font-bold text-primary">{entry.payload.user}</p>
                     <p className="text-xs text-muted-foreground">
-                      Dice: <span className="text-foreground">{formatDiceRolled(entry.payload)}</span>
+                      Type: <span className="font-bold text-foreground">{getRollCategory(entry.payload)}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Roll: <span className="text-foreground">{formatRollName(entry.payload)}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Result: <span className="text-foreground">{formatResultBreakdown(entry.payload)}</span>

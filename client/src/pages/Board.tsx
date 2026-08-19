@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useCharacters, useUpdateCharacter } from "@/hooks/use-characters";
-import { useCampaignState, usePassHour, useSetCampaignDay, useUndoCampaignAction, useUpdateCampaignDay } from "@/hooks/use-campaign";
+import { usePassHour, useUndoCampaignAction } from "@/hooks/use-campaign";
 import { useAuth } from "@/lib/auth";
 import { useMemoryTrade } from "@/hooks/use-memory-trade";
 import { useWebSocket } from "@/hooks/use-websocket";
@@ -17,7 +17,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BellDot, BookOpenText, CalendarPlus, Clock3, Handshake, LayoutGrid, LibraryBig, List, Undo2, Wifi, WifiOff } from "lucide-react";
+import { BellDot, BookOpenText, Clock3, Handshake, LayoutGrid, LibraryBig, List, Undo2, Wifi, WifiOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { type Character, getTagColorForOwner, ACCOUNTS } from "@shared/schema";
 
@@ -121,16 +121,12 @@ function CharacterListItem({ character }: { character: Character }) {
 
 export default function Board() {
   const { data: characters, isLoading, error } = useCharacters();
-  const { data: campaignState } = useCampaignState();
-  const updateCampaignDay = useUpdateCampaignDay();
-  const setCampaignDay = useSetCampaignDay();
   const passHour = usePassHour();
   const undoCampaignAction = useUndoCampaignAction();
   const { connected } = useWebSocket();
   const { currentUser, isDM } = useAuth();
   const [tab, setTab] = useState<"board" | "list" | "trade" | "manual" | "bank">("board");
-  const [isEditingDay, setIsEditingDay] = useState(false);
-  const [dayDraft, setDayDraft] = useState("");
+  const [isDiceRollerOpen, setIsDiceRollerOpen] = useState(false);
   const {
     pendingRequests,
     pendingRequestCount,
@@ -145,23 +141,6 @@ export default function Board() {
     setTradeAccepted,
     cancelTradeSession,
   } = useMemoryTrade();
-  const dayCount = campaignState?.dayCount ?? 28;
-
-  useEffect(() => {
-    if (!isEditingDay) {
-      setDayDraft(String(dayCount));
-    }
-  }, [dayCount, isEditingDay]);
-
-  const handleAdvanceDay = async () => {
-    try {
-      await updateCampaignDay.mutateAsync(1);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to advance day";
-      alert(message);
-    }
-  };
-
   const handlePassHour = async () => {
     try {
       await passHour.mutateAsync();
@@ -176,33 +155,6 @@ export default function Board() {
       await undoCampaignAction.mutateAsync();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to undo DM action";
-      alert(message);
-    }
-  };
-
-  const startDayEdit = () => {
-    if (!isDM) return;
-    setDayDraft(String(dayCount));
-    setIsEditingDay(true);
-  };
-
-  const cancelDayEdit = () => {
-    setIsEditingDay(false);
-    setDayDraft(String(dayCount));
-  };
-
-  const submitDayEdit = async () => {
-    if (!isDM) return;
-    const parsed = Number.parseInt(dayDraft, 10);
-    if (!Number.isFinite(parsed) || parsed < 1) {
-      alert("Day must be a whole number of at least 1.");
-      return;
-    }
-    try {
-      await setCampaignDay.mutateAsync(parsed);
-      setIsEditingDay(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to set day";
       alert(message);
     }
   };
@@ -225,6 +177,7 @@ export default function Board() {
   }
 
   const activeCharacters = characters?.filter(c => (c.isActive ?? 1) === 1) || [];
+  const activePlayerCharacter = activeCharacters.find(c => c.owner === currentUser);
   const allCharacters = characters || [];
   const dmRoundControls: ReactNode = isDM ? (
     <>
@@ -235,14 +188,6 @@ export default function Board() {
       >
         <Undo2 className="w-4 h-4 mr-2" />
         {undoCampaignAction.isPending ? "Undoing..." : "Undo"}
-      </Button>
-      <Button
-        onClick={handleAdvanceDay}
-        disabled={updateCampaignDay.isPending || setCampaignDay.isPending}
-        data-testid="button-day-advance"
-      >
-        <CalendarPlus className="w-4 h-4 mr-2" />
-        {updateCampaignDay.isPending ? "Updating..." : "Advance Day"}
       </Button>
       <Button
         onClick={handlePassHour}
@@ -261,42 +206,7 @@ export default function Board() {
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-4">
             <h1 className="text-4xl md:text-5xl font-display font-bold text-glow text-primary tracking-wider uppercase">
-              Aspects <span className="text-foreground">Campaign</span> <span className="text-foreground/35">|</span> Day -{" "}
-              {isDM && isEditingDay ? (
-                <input
-                  type="number"
-                  min={1}
-                  value={dayDraft}
-                  onChange={(e) => setDayDraft(e.target.value)}
-                  onBlur={() => {
-                    if (!setCampaignDay.isPending) {
-                      void submitDayEdit();
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void submitDayEdit();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      cancelDayEdit();
-                    }
-                  }}
-                  autoFocus
-                  className="w-24 text-center rounded-md border border-primary/40 bg-black/40 text-foreground text-3xl md:text-4xl font-display font-bold px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  data-testid="input-day-count"
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={startDayEdit}
-                  disabled={!isDM}
-                  className={`font-display font-bold ${isDM ? "text-foreground hover:text-primary transition-colors cursor-text underline decoration-dotted underline-offset-8" : "text-foreground"}`}
-                  data-testid="text-day-count"
-                >
-                  {dayCount}
-                </button>
-              )}
+              Aspects <span className="text-foreground">Campaign</span>
             </h1>
           </div>
           <div className="flex items-center gap-2 mt-2 text-sm">
@@ -444,8 +354,8 @@ export default function Board() {
       {tab === "bank" && isDM && (
         <MemoryBankTab characters={allCharacters} />
       )}
-      <DiceRoller />
-      <RoundLogPanel leftControls={dmRoundControls} />
+      <DiceRoller activeCharacter={activePlayerCharacter} onOpenChange={setIsDiceRollerOpen} />
+      <RoundLogPanel leftControls={dmRoundControls} diceRollerOpen={isDiceRollerOpen} />
     </div>
   );
 }

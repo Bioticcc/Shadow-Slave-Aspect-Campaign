@@ -15,6 +15,7 @@ import { useUpdateCharacter } from "@/hooks/use-characters";
 import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Minus, Plus, Shield, Droplets, Sparkles } from "lucide-react";
 import { CharacterSheet } from "./CharacterSheet";
 import { motion } from "framer-motion";
@@ -41,6 +42,10 @@ function getEffectiveArmorClass(character: Character, memories: Memory[]): numbe
 export function CharacterCard({ character }: { character: Character }) {
   const { currentUser, isDM } = useAuth();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingMaxHealth, setEditingMaxHealth] = useState(false);
+  const [maxHealthDraft, setMaxHealthDraft] = useState(String(character.maxHealth));
+  const [editingMaxEssence, setEditingMaxEssence] = useState(false);
+  const [maxEssenceDraft, setMaxEssenceDraft] = useState(String(character.maxEssence ?? 10));
   const updateChar = useUpdateCharacter();
   const memories = getMemories(character);
   const echoes = getEchoes(character);
@@ -103,6 +108,39 @@ export function CharacterCard({ character }: { character: Character }) {
     }
   };
 
+  const commitMaxHealth = () => {
+    const parsed = Number.parseInt(maxHealthDraft, 10);
+    const maxHealth = Number.isFinite(parsed) ? Math.max(1, parsed) : character.maxHealth;
+    setMaxHealthDraft(String(maxHealth));
+    setEditingMaxHealth(false);
+    if (maxHealth !== character.maxHealth) {
+      updateChar.mutate({
+        id: character.id,
+        updates: {
+          maxHealth,
+          currentHealth: Math.min(character.currentHealth, maxHealth),
+        },
+      });
+    }
+  };
+
+  const commitMaxEssence = () => {
+    const currentMax = character.maxEssence ?? 10;
+    const parsed = Number.parseInt(maxEssenceDraft, 10);
+    const maxEssence = Number.isFinite(parsed) ? Math.max(0, parsed) : currentMax;
+    setMaxEssenceDraft(String(maxEssence));
+    setEditingMaxEssence(false);
+    if (maxEssence !== currentMax) {
+      updateChar.mutate({
+        id: character.id,
+        updates: {
+          maxEssence,
+          currentEssence: Math.min(character.currentEssence ?? 0, maxEssence),
+        },
+      });
+    }
+  };
+
   const handleEchoHealthChange = (e: React.MouseEvent, echoIndex: number, delta: number) => {
     e.stopPropagation();
     if (!canEdit) return;
@@ -129,13 +167,17 @@ export function CharacterCard({ character }: { character: Character }) {
   const armorClass = getEffectiveArmorClass(character, memories);
   const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
   const canEdit = isDM || currentUser === character.owner;
+  const accentColor = typeof character.accentColor === "string" && /^#[0-9a-f]{6}$/i.test(character.accentColor)
+    ? character.accentColor
+    : "#b45353";
 
   return (
     <>
       <motion.div
         layoutId={`char-${character.id}`}
         onClick={() => setSheetOpen(true)}
-        className="group relative cursor-pointer glass-panel rounded-2xl overflow-hidden hover:-translate-y-1 transition-all duration-300 border-glow"
+        className="character-accent-scope group relative cursor-pointer glass-panel rounded-2xl overflow-hidden hover:-translate-y-1 transition-all duration-300 border-glow"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
       >
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80 z-0" />
         
@@ -182,12 +224,46 @@ export function CharacterCard({ character }: { character: Character }) {
                   PB +{proficiencyBonus}
                 </span>
                 {summonedArmor && (
-                  <span className="text-[10px] font-bold text-sky-400 flex items-center gap-0.5" data-testid={`text-card-armor-${character.id}`}>
+                  <span className="text-[10px] font-bold text-primary flex items-center gap-0.5" data-testid={`text-card-armor-${character.id}`}>
                     <Shield className="w-3 h-3" /> {summonedArmor.currentDurability}/{summonedArmor.maxDurability}
                   </span>
                 )}
                 <span className={`text-sm font-bold ${isLowHealth ? 'text-destructive' : 'text-primary'}`}>
-                  {character.currentHealth} / {character.maxHealth}
+                  {character.currentHealth} /
+                  {editingMaxHealth ? (
+                    <Input
+                      type="number"
+                      min={1}
+                      autoFocus
+                      value={maxHealthDraft}
+                      onChange={(event) => setMaxHealthDraft(event.target.value)}
+                      onBlur={commitMaxHealth}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                        if (event.key === "Escape") {
+                          setMaxHealthDraft(String(character.maxHealth));
+                          setEditingMaxHealth(false);
+                        }
+                      }}
+                      className="ml-1 inline-flex h-6 w-16 px-1.5 text-center text-sm font-bold"
+                      data-testid={`input-card-max-health-${character.id}`}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="ml-1 cursor-text rounded px-0.5 hover:bg-white/10"
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        if (!canEdit) return;
+                        setMaxHealthDraft(String(character.maxHealth));
+                        setEditingMaxHealth(true);
+                      }}
+                      title={canEdit ? "Double-click to edit maximum HP" : undefined}
+                    >
+                      {character.maxHealth}
+                    </button>
+                  )}
                 </span>
               </div>
             </div>
@@ -199,7 +275,7 @@ export function CharacterCard({ character }: { character: Character }) {
               />
               {summonedArmor && summonedArmor.currentDurability > 0 && (
                 <div
-                  className="absolute inset-y-0 transition-all duration-300 bg-sky-400/40"
+                  className="absolute inset-y-0 transition-all duration-300 bg-primary/40"
                   style={{
                     left: `${healthPercent}%`,
                     width: `${Math.min((summonedArmor.currentDurability / character.maxHealth) * 100, 100 - healthPercent)}%`,
@@ -236,7 +312,41 @@ export function CharacterCard({ character }: { character: Character }) {
                 <Droplets className="w-3 h-3 text-violet-400" /> ES
               </span>
               <span className="text-sm font-bold text-violet-300">
-                {essenceCurrent} / {essenceMax}
+                {essenceCurrent} /
+                {editingMaxEssence ? (
+                  <Input
+                    type="number"
+                    min={0}
+                    autoFocus
+                    value={maxEssenceDraft}
+                    onChange={(event) => setMaxEssenceDraft(event.target.value)}
+                    onBlur={commitMaxEssence}
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                        if (event.key === "Escape") {
+                          setMaxEssenceDraft(String(essenceMax));
+                          setEditingMaxEssence(false);
+                      }
+                    }}
+                    className="ml-1 inline-flex h-6 w-16 px-1.5 text-center text-sm font-bold"
+                    data-testid={`input-card-max-essence-${character.id}`}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="ml-1 cursor-text rounded px-0.5 hover:bg-white/10"
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      if (!canEdit) return;
+                      setMaxEssenceDraft(String(essenceMax));
+                      setEditingMaxEssence(true);
+                    }}
+                    title={canEdit ? "Double-click to edit maximum Essence" : undefined}
+                  >
+                    {essenceMax}
+                  </button>
+                )}
               </span>
             </div>
 
@@ -271,8 +381,8 @@ export function CharacterCard({ character }: { character: Character }) {
             </div>
 
             {summonedEchoes.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-cyan-500/20 space-y-2">
-                <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-cyan-300">
+              <div className="character-accent-border mt-4 pt-3 border-t space-y-2">
+                <div className="character-accent-text flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest">
                   <Sparkles className="w-3 h-3" /> Summoned Echoes
                 </div>
                 <div className="space-y-2">
@@ -281,16 +391,16 @@ export function CharacterCard({ character }: { character: Character }) {
                     return (
                       <div
                         key={`echo-${index}`}
-                        className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-2"
+                        className="character-accent-border character-accent-soft rounded-lg border p-2"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-8 h-8 rounded-full border border-cyan-300/40 bg-cyan-900/50 text-cyan-100 flex items-center justify-center text-xs font-bold shrink-0">
+                            <div className="character-accent-border character-accent-soft character-accent-text w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold shrink-0">
                               {(echo.name || "E").slice(0, 1).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-cyan-100 truncate">{echo.name || `Echo ${index + 1}`}</p>
-                              <p className="text-[10px] text-cyan-300/80">HP {echo.currentHealth}/{echo.maxHealth}</p>
+                              <p className="character-accent-text text-xs font-bold truncate">{echo.name || `Echo ${index + 1}`}</p>
+                              <p className="character-accent-muted text-[10px]">HP {echo.currentHealth}/{echo.maxHealth}</p>
                             </div>
                           </div>
                           <div className="flex gap-1">
@@ -316,10 +426,10 @@ export function CharacterCard({ character }: { character: Character }) {
                             </Button>
                           </div>
                         </div>
-                        <div className="mt-2 h-1.5 bg-black/60 rounded-full overflow-hidden border border-cyan-500/20">
+                        <div className="character-accent-border mt-2 h-1.5 bg-black/60 rounded-full overflow-hidden border">
                           <div
-                            className="h-full bg-cyan-400 transition-all duration-300"
-                            style={{ width: `${hpPercent}%` }}
+                            className="h-full transition-all duration-300"
+                            style={{ width: `${hpPercent}%`, backgroundColor: "var(--character-accent)" }}
                           />
                         </div>
                       </div>

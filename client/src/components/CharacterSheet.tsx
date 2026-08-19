@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import {
   type ArmorDexterityBonusMode,
   type Character,
@@ -13,7 +13,6 @@ import {
   getEffectiveMemoryArmorClass,
   getArmorDexterityBonus,
   getClassTierIndex,
-  getEssenceMax,
   getMaxFragmentsForClass,
   getProficiencyBonus,
   normalizeEchoes,
@@ -36,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Droplets, Swords, Sparkles, Wrench, Zap, Crosshair, Flame, Fingerprint, Anvil } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Swords, Sparkles, Wrench, Zap, Crosshair, Flame, Fingerprint, Anvil } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
 import { ExpandedTraitPopup } from "./ExpandedTraitPopup";
@@ -58,8 +57,17 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const RANKS = ["Dreamer", "Awakened", "Master", "Saint", "Sovreign", "##??!??!??!_Null_UnKnown"];
-const SOUL_CORES = ["Dormant"];
+const SOUL_CORES = ["Dormant", "Awakened", "Ascended", "Transcendent", "Supreme", "Sacred", "Divine"];
+const DEFAULT_CHARACTER_ACCENT_COLOR = "#b45353";
+const RANK_BY_SOUL_CORE: Record<string, string> = {
+  Dormant: "Dreamer",
+  Awakened: "Awakened",
+  Ascended: "Master",
+  Transcendent: "Saint",
+  Supreme: "Sovereign",
+  Sacred: "Sacred",
+  Divine: "Divine",
+};
 const ASPECT_RANKS = ["Divine"];
 const STAT_FIELDS: Array<{ key: keyof CharacterStats; short: string; label: string }> = [
   { key: "strength", short: "STR", label: "Strength" },
@@ -84,6 +92,17 @@ const createDefaultEcho = (name = ""): Echo => ({
   isSummoned: false,
 });
 
+function getRankForSoulCore(soulCore: unknown): string {
+  const normalized = typeof soulCore === "string" && soulCore.trim() ? soulCore.trim() : "Dormant";
+  return RANK_BY_SOUL_CORE[normalized] || normalized;
+}
+
+function normalizeAccentColor(value: unknown): string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
+    ? value
+    : DEFAULT_CHARACTER_ACCENT_COLOR;
+}
+
 function toStatDrafts(value: unknown): Record<keyof CharacterStats, string> {
   const normalized = normalizeStats(value);
   return {
@@ -104,10 +123,10 @@ const MEMORY_TYPE_ICONS: Record<string, typeof Shield> = {
 };
 
 const MEMORY_TYPE_COLORS: Record<string, string> = {
-  armor: "text-sky-400 border-sky-500/30 bg-sky-500/10",
-  weapon: "text-red-400 border-red-500/30 bg-red-500/10",
-  tool: "text-amber-400 border-amber-500/30 bg-amber-500/10",
-  charm: "text-purple-400 border-purple-500/30 bg-purple-500/10",
+  armor: "text-primary border-primary/30 bg-primary/10",
+  weapon: "character-accent-text character-accent-border character-accent-soft character-accent-glow",
+  tool: "text-primary border-primary/30 bg-primary/10",
+  charm: "text-primary border-primary/30 bg-primary/10",
 };
 
 const MEMORY_DIALOG_CONTENT_CLASS = "glass-panel border-primary/20 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,36rem)] overflow-hidden gap-0 content-start grid-rows-[auto_minmax(0,1fr)]";
@@ -127,12 +146,6 @@ function getMemories(character: Character): Memory[] {
 function getSummonedArmorMemory(character: Character): Memory | null {
   const mems = getMemories(character);
   return mems.find(m => m.memoryType === "armor" && m.isSummoned) || null;
-}
-
-function getSummonedArmorDurability(character: Character): { current: number; max: number } | null {
-  const armor = getSummonedArmorMemory(character);
-  if (!armor) return null;
-  return { current: armor.currentDurability, max: armor.maxDurability };
 }
 
 function getBaseArmorClass(character: Character): number {
@@ -171,10 +184,10 @@ export function CharacterSheet({
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [lastWeaponRoll, setLastWeaponRoll] = useState<{ type: "hit" | "damage"; result: string; total: number; memoryIndex: number } | null>(null);
   const [lastEchoMoveRoll, setLastEchoMoveRoll] = useState<{ type: "hit" | "damage"; result: string; total: number; echoIndex: number; moveIndex: number } | null>(null);
-  const [manualCurrentHealth, setManualCurrentHealth] = useState<string>(String(character.currentHealth));
   const [statDrafts, setStatDrafts] = useState<Record<keyof CharacterStats, string>>(toStatDrafts(character.stats));
   const [isAddingEcho, setIsAddingEcho] = useState(false);
   const [newEchoDraft, setNewEchoDraft] = useState<Echo>(createDefaultEcho());
+  const inventoryNotesRef = useRef<HTMLTextAreaElement>(null);
   const displayAttributes = normalizeExpandedAttributes(character);
   const updateChar = useUpdateCharacter();
   const deleteChar = useUpdateCharacter();
@@ -187,7 +200,6 @@ export function CharacterSheet({
       setDeleteConfirm("");
       setLastWeaponRoll(null);
       setLastEchoMoveRoll(null);
-      setManualCurrentHealth(String(character.currentHealth));
       setStatDrafts(toStatDrafts(character.stats));
       setIsAddingEcho(false);
       setNewEchoDraft(createDefaultEcho());
@@ -199,8 +211,17 @@ export function CharacterSheet({
     setIsAddingEcho(false);
   }, [isEditing]);
 
+  useLayoutEffect(() => {
+    if (!isEditing || !inventoryNotesRef.current) return;
+    const textarea = inventoryNotesRef.current;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(180, textarea.scrollHeight)}px`;
+  }, [isEditing, editData.inventoryNotes]);
+
   const handleSave = () => {
     const data = { ...editData };
+    data.soulCore = data.soulCore || character.soulCore || "Dormant";
+    data.rank = getRankForSoulCore(data.soulCore);
     const currentClass = data.soulClass || "Beast";
     const fragments = data.soulFragments ?? 0;
     const oldFragments = character.soulFragments ?? 0;
@@ -343,7 +364,6 @@ export function CharacterSheet({
   const visibleEchoes = isEditing ? editEchoes : characterEchoes;
   const characterStats = normalizeStats(character.stats);
   const editStats = normalizeStats(editData.stats);
-  const armorShield = getSummonedArmorDurability(character);
   const starSeekingArmorBonus = getStarSeekingArmorBonus(displayAttributes);
   const effectiveArmorClass = getEffectiveArmorClass(character) + starSeekingArmorBonus;
   const baseArmorClass = getBaseArmorClass(character);
@@ -352,17 +372,6 @@ export function CharacterSheet({
 
   const instantUpdate = (updates: Partial<Character>) => {
     updateChar.mutate({ id: character.id, updates });
-  };
-
-  const commitManualCurrentHealth = () => {
-    if (!canEdit || isEditing) return;
-    const parsed = Number.parseInt(manualCurrentHealth, 10);
-    const next = Number.isNaN(parsed) ? character.currentHealth : parsed;
-    const clamped = Math.max(0, Math.min(character.maxHealth, next));
-    setManualCurrentHealth(String(clamped));
-    if (clamped !== character.currentHealth) {
-      instantUpdate({ currentHealth: clamped });
-    }
   };
 
   const setEditStatDraft = (key: keyof CharacterStats, value: string) => {
@@ -478,27 +487,6 @@ export function CharacterSheet({
 
     echoes[echoIndex] = { ...target, currentHealth: nextValue };
     instantUpdate({ echoes: serializeEchoes(echoes) });
-  };
-
-  const handleDamage = (amount: number) => {
-    const mems = [...memories];
-    const armorIdx = mems.findIndex(m => m.memoryType === "armor" && m.isSummoned);
-    if (armorIdx !== -1) {
-      const armor = { ...mems[armorIdx] };
-      if (armor.currentDurability > 0) {
-        const absorbed = Math.min(amount, armor.currentDurability);
-        armor.currentDurability -= absorbed;
-        const remaining = amount - absorbed;
-        mems[armorIdx] = armor;
-        const updates: Partial<Character> = { memories: mems };
-        if (remaining > 0) {
-          updates.currentHealth = Math.max(0, character.currentHealth - remaining);
-        }
-        instantUpdate(updates);
-        return;
-      }
-    }
-    instantUpdate({ currentHealth: Math.max(0, character.currentHealth - amount) });
   };
 
   const handleSummonToggle = (memIndex: number) => {
@@ -690,10 +678,16 @@ export function CharacterSheet({
   const maxFragments = getMaxFragmentsForClass(currentClass);
   const currentTierIdx = getClassTierIndex(currentClass);
   const isMaxClass = currentTierIdx >= CLASS_TIERS.length - 1;
+  const displayedSoulCore = (isEditing ? editData.soulCore : character.soulCore) || "Dormant";
+  const displayedRank = getRankForSoulCore(displayedSoulCore);
+  const accentColor = normalizeAccentColor(isEditing ? editData.accentColor : character.accentColor);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass-panel max-w-5xl h-[90vh] p-0 overflow-hidden flex flex-col border-primary/30">
+      <DialogContent
+        className="character-accent-scope glass-panel max-w-7xl h-[90vh] p-0 overflow-hidden flex flex-col border-primary/30"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
         
         <DialogHeader className="p-6 pb-2 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
@@ -728,22 +722,37 @@ export function CharacterSheet({
             <div>
               <DialogTitle className="font-display text-3xl font-bold rank-gradient text-glow">
                 {isEditing ? (
-                  <Input 
-                    value={editData.name} 
-                    onChange={e => setEditData({...editData, name: e.target.value})}
-                    className="text-2xl font-display bg-black/50 border-primary/50 w-[300px]"
-                  />
-                ) : character.name}
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-2xl">{displayedRank}</span>
+                    <Input
+                      value={editData.name}
+                      onChange={e => setEditData({...editData, name: e.target.value})}
+                      className="text-2xl font-display bg-black/50 border-primary/50 w-[300px]"
+                    />
+                  </div>
+                ) : `${displayedRank} ${character.name}`}
               </DialogTitle>
               <p className="text-sm font-medium text-muted-foreground mt-1 uppercase tracking-widest flex items-center gap-2">
                 <Star className="w-3 h-3 text-primary" />
                 {isEditing ? (
-                  <Input 
-                    value={editData.trueName} 
-                    onChange={e => setEditData({...editData, trueName: e.target.value})}
-                    className="h-7 text-xs bg-black/50 border-primary/30 inline-block w-[200px]"
-                    placeholder="True Name"
-                  />
+                  <>
+                    <Input
+                      value={editData.trueName}
+                      onChange={e => setEditData({...editData, trueName: e.target.value})}
+                      className="h-7 text-xs bg-black/50 border-primary/30 inline-block w-[200px]"
+                      placeholder="True Name"
+                    />
+                    <label className="flex items-center gap-1.5 normal-case tracking-normal" title="Character accent color">
+                      <input
+                        type="color"
+                        value={accentColor}
+                        onChange={(event) => setEditData({ ...editData, accentColor: event.target.value })}
+                        className="h-7 w-8 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
+                        aria-label="Character accent color"
+                      />
+                      <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Accent</span>
+                    </label>
+                  </>
                 ) : character.trueName}
               </p>
             </div>
@@ -765,300 +774,95 @@ export function CharacterSheet({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[19rem_repeat(2,minmax(0,1fr))]">
             
-            {/* LEFT COLUMN: Vitals & Core Stats */}
-            <div className="space-y-8">
-              {/* Health Block */}
-              <div className="bg-black/30 rounded-xl p-5 border border-white/5 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-[50px] pointer-events-none" />
-                <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-destructive" /> Vitality
-                </h4>
-                
-                <div className="flex items-center justify-between mb-2">
-                  {isEditing ? (
-                    <span className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={editData.currentHealth ?? character.currentHealth}
-                        onChange={e => {
-                          const nextCurrent = Math.max(0, parseInt(e.target.value) || 0);
-                          const maxHealth = Math.max(0, editData.maxHealth ?? character.maxHealth);
-                          setEditData({ ...editData, currentHealth: Math.min(nextCurrent, maxHealth) });
-                        }}
-                        className="w-20 inline-block h-8 px-2 text-center"
-                        data-testid="input-current-health-edit"
-                      />
-                      <span className="text-muted-foreground text-xl">/</span>
-                      <Input
-                        type="number"
-                        value={editData.maxHealth ?? character.maxHealth}
-                        onChange={e => {
-                          const nextMax = Math.max(0, parseInt(e.target.value) || 0);
-                          const currentHealth = Math.min(editData.currentHealth ?? character.currentHealth, nextMax);
-                          setEditData({ ...editData, maxHealth: nextMax, currentHealth });
-                        }}
-                        className="w-20 inline-block h-8 px-2 text-center"
-                        data-testid="input-max-health-edit"
-                      />
-                    </span>
-                  ) : (
-                    <span className="text-3xl font-display font-bold text-foreground">
-                      {character.currentHealth} <span className="text-muted-foreground text-xl">/ {character.maxHealth}</span>
-                    </span>
-                  )}
-                  {armorShield && (
-                    <span className="text-sm font-bold text-sky-400 flex items-center gap-1" data-testid="text-armor-durability">
-                      <Shield className="w-4 h-4" /> {armorShield.current}/{armorShield.max}
-                    </span>
-                  )}
-                </div>
-
-                {/* Health bar with armor overlay */}
-                <div className="relative h-3 bg-black/50 rounded-full mb-3 overflow-hidden">
-                  <div
-                    className="absolute inset-y-0 left-0 bg-red-500/80 rounded-full transition-all duration-300"
-                    style={{ width: `${character.maxHealth > 0 ? (character.currentHealth / character.maxHealth) * 100 : 0}%` }}
-                  />
-                  {armorShield && armorShield.current > 0 && (
-                    <div
-                      className="absolute inset-y-0 rounded-full transition-all duration-300 bg-sky-400/40 border-r border-sky-400/60"
-                      style={{
-                        left: `${character.maxHealth > 0 ? (character.currentHealth / character.maxHealth) * 100 : 0}%`,
-                        width: `${character.maxHealth > 0 ? Math.min((armorShield.current / character.maxHealth) * 100, 100 - (character.currentHealth / character.maxHealth) * 100) : 0}%`,
-                      }}
-                    />
-                  )}
-                </div>
-
-                {!isEditing && canEdit && (
-                  <div className="mb-3">
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-widest">Current HP</label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={character.maxHealth}
-                      value={manualCurrentHealth}
-                      onChange={e => setManualCurrentHealth(e.target.value)}
-                      onBlur={commitManualCurrentHealth}
-                      onKeyDown={e => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commitManualCurrentHealth();
-                        }
-                      }}
-                      className="mt-1 bg-black/50 border-white/10 h-8 w-24 text-center"
-                      data-testid="input-current-health-manual"
-                    />
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
-                    onClick={() => handleDamage(1)}
-                    disabled={!canEdit || isEditing || (character.currentHealth <= 0 && (!armorShield || armorShield.current <= 0))}
-                    data-testid="button-health-minus"
-                  >
-                    <Minus className="w-4 h-4 mr-1" /> DMG
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                    onClick={() => instantUpdate({ currentHealth: Math.min(character.maxHealth, character.currentHealth + 1) })}
-                    disabled={!canEdit || isEditing || character.currentHealth >= character.maxHealth}
-                    data-testid="button-health-plus"
-                  >
-                    <Plus className="w-4 h-4 mr-1" /> HEAL
-                  </Button>
-                </div>
-              </div>
-
-              {/* Essence Block */}
-              <div className="bg-black/30 rounded-xl p-5 border border-white/5 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 blur-[50px] pointer-events-none" />
-                <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
-                  <Droplets className="w-4 h-4 text-violet-400" /> Essence
-                </h4>
-                
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-3xl font-display font-bold text-violet-200">
-                    {character.currentEssence ?? 10} <span className="text-muted-foreground text-xl">/ {character.maxEssence ?? 10}</span>
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
-                    onClick={() => instantUpdate({ currentEssence: Math.max(0, (character.currentEssence ?? 0) - 1) })}
-                    disabled={!canEdit || isEditing || (character.currentEssence ?? 0) <= 0}
-                    data-testid="button-essence-minus"
-                  >
-                    <Minus className="w-4 h-4 mr-1" /> USE
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
-                    onClick={() => instantUpdate({ currentEssence: Math.min((character.maxEssence ?? 10), (character.currentEssence ?? 0) + 1) })}
-                    disabled={!canEdit || isEditing || (character.currentEssence ?? 0) >= (character.maxEssence ?? 10)}
-                    data-testid="button-essence-plus"
-                  >
-                    <Plus className="w-4 h-4 mr-1" /> RESTORE
-                  </Button>
-                </div>
-              </div>
-
+            {/* Progression, echoes, and stats */}
+            <div className="contents">
               {/* Soul Fragments Block */}
-              <div className="bg-black/30 rounded-xl p-5 border border-white/5 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-[50px] pointer-events-none" />
-                <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
-                  <Gem className="w-4 h-4 text-blue-400" /> {character.corePrefix || "Soul"} Fragments
-                </h4>
-                
-                <div className="flex items-center justify-between mb-2">
-                  {isEditing ? (
-                    <span className="text-3xl font-display font-bold text-blue-100 flex items-center gap-2">
-                      <Input 
-                        type="number" 
-                        value={editData.soulFragments} 
-                        onChange={e => {
-                          const val = parseInt(e.target.value) || 0;
-                          const max = getMaxFragmentsForClass(editData.soulClass || "Beast");
-                          setEditData({...editData, soulFragments: Math.max(0, Math.min(val, max))});
-                        }}
-                        className="w-24 inline-block h-10 px-2 text-center text-2xl"
-                        data-testid="input-soul-fragments"
-                      />
-                      <span className="text-muted-foreground text-sm font-sans font-normal">/ {maxFragments}</span>
-                    </span>
-                  ) : (
-                    <span className="text-3xl font-display font-bold text-blue-100">
-                      {character.soulFragments} <span className="text-muted-foreground text-sm font-sans font-normal">/ {maxFragments}</span>
-                    </span>
-                  )}
-                </div>
+              <div className="character-accent-panel character-accent-glow order-3 relative overflow-hidden rounded-xl border px-5 py-4 lg:col-span-3">
+                <div className="character-accent-soft pointer-events-none absolute inset-x-1/4 top-0 h-20 blur-[45px]" />
+                <div className="relative flex flex-col items-center justify-between gap-4 sm:flex-row">
+                  <div className="flex min-w-0 flex-wrap items-end justify-center gap-x-3 gap-y-2 sm:justify-start">
+                    <Gem className="character-accent-text mb-1 h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="character-accent-muted text-[9px] font-bold uppercase tracking-[0.2em]">Nightmare Rank</p>
+                      {isEditing ? (
+                        <Select
+                          value={displayedSoulCore}
+                          onValueChange={(value) => setEditData({
+                            ...editData,
+                            soulCore: value,
+                            rank: getRankForSoulCore(value),
+                          })}
+                        >
+                          <SelectTrigger className="character-accent-border character-accent-text mt-1 h-8 w-[150px] bg-black/50 font-display">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SOUL_CORES.map((soulCore) => (
+                              <SelectItem key={soulCore} value={soulCore}>{soulCore}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="character-accent-text font-display text-xl font-bold">{displayedSoulCore}</p>
+                      )}
+                    </div>
+                    <div className="character-accent-muted mb-0.5 text-xl font-display">·</div>
+                    <div>
+                      <p className="character-accent-muted text-[9px] font-bold uppercase tracking-[0.2em]">Class</p>
+                      <p className="character-accent-text font-display text-xl font-bold" data-testid="text-soul-class">{currentClass}</p>
+                    </div>
+                    <div className="character-accent-muted mb-0.5 text-xl font-display">—</div>
+                    <div>
+                      <p className="character-accent-muted text-[9px] font-bold uppercase tracking-[0.2em]">Fragments</p>
+                      <p className="character-accent-text font-display text-xl font-bold">
+                        {character.soulFragments} / {maxFragments}
+                        {isMaxClass && character.soulFragments >= maxFragments && (
+                          <span className="ml-2 text-[10px] font-sans font-normal uppercase tracking-widest text-muted-foreground">Max class</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
 
-                <p className="text-lg font-display font-bold text-blue-400 mb-4" data-testid="text-soul-class">
-                  {currentClass}
-                  {isMaxClass && character.soulFragments >= maxFragments && (
-                    <span className="text-xs text-muted-foreground font-sans font-normal ml-2">(Max Class)</span>
-                  )}
-                </p>
-
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
-                    onClick={() => handleFragmentChange(-1)}
-                    disabled={!canEdit || isEditing || character.soulFragments <= 0}
-                    data-testid="button-fragments-minus1"
-                  >- 1</Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
-                    onClick={() => handleFragmentChange(1)}
-                    disabled={!canEdit || isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
-                    data-testid="button-fragments-plus1"
-                  >+ 1</Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 flex-1"
-                    onClick={() => handleFragmentChange(10)}
-                    disabled={!canEdit || isEditing || (isMaxClass && character.soulFragments >= maxFragments)}
-                    data-testid="button-fragments-plus10"
-                  >+ 10</Button>
+                  <div className="grid w-full grid-cols-4 gap-2 sm:w-auto">
+                    {[-10, -1, 1, 10].map((delta) => {
+                      const increasing = delta > 0;
+                      const disabled = !canEdit
+                        || isEditing
+                        || (!increasing && character.soulFragments <= 0)
+                        || (increasing && isMaxClass && character.soulFragments >= maxFragments);
+                      return (
+                        <Button
+                          key={delta}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="character-accent-button min-w-14"
+                          onClick={() => handleFragmentChange(delta)}
+                          disabled={disabled}
+                          data-testid={`button-fragments-${delta > 0 ? "plus" : "minus"}${Math.abs(delta)}`}
+                        >
+                          {delta > 0 ? "+" : "−"}{Math.abs(delta)}
+                        </Button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              {/* Status Block */}
-              <div className="bg-black/30 rounded-xl p-5 border border-white/5 space-y-4">
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Rank</label>
-                  {isEditing ? (
-                    <Select value={editData.rank} onValueChange={(v) => setEditData({...editData, rank: v})}>
-                      <SelectTrigger className="mt-1 bg-black/50 border-white/10"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {RANKS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-lg font-display text-primary mt-1">{character.rank}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Armor Class</label>
-                  {isEditing ? (
-                    <div className="space-y-1">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={editData.armorClass ?? 8}
-                        onChange={e => setEditData({ ...editData, armorClass: Math.max(1, parseInt(e.target.value) || 1) })}
-                        className="mt-1 bg-black/50 border-white/10 w-24"
-                        data-testid="input-armor-class"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Final AC = Base + DEX ({editData.armorClass ?? 8} + {editStats.dexterity} = {(editData.armorClass ?? 8) + editStats.dexterity})
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="mt-1">
-                      <p className="text-lg font-display text-amber-300" data-testid="text-armor-class">
-                        {effectiveArmorClass}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        Base {baseArmorClass} + {armorDexterityMode === "full" ? "DEX" : armorDexterityMode === "half" ? "Half DEX" : "No DEX"} {dexterityBonus}{starSeekingArmorBonus > 0 ? ` + Star Seeking ${starSeekingArmorBonus}` : ""}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Proficiency Bonus</label>
-                  <p className="mt-1 font-display text-lg text-cyan-300">+{proficiencyBonus}</p>
-                  <p className="text-[10px] text-muted-foreground">Based on {character.totalSoulFragments ?? 0} total shards</p>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{character.corePrefix || "Soul"} Core</label>
-                  {isEditing ? (
-                    <div className="space-y-2 mt-1">
-                      <Input 
-                        value={editData.corePrefix} 
-                        onChange={e => setEditData({...editData, corePrefix: e.target.value})}
-                        className="bg-black/50 border-white/10 h-8 text-xs"
-                        placeholder="Prefix (e.g. Soul, Steel, Corrupted)"
-                        data-testid="input-core-prefix"
-                      />
-                      <Select value={editData.soulCore} onValueChange={(v) => setEditData({...editData, soulCore: v})}>
-                        <SelectTrigger className="bg-black/50 border-white/10"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {SOUL_CORES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : (
-                    <p className="text-lg font-display text-foreground mt-1">{character.soulCore}</p>
-                  )}
-                </div>
-
+              {/* Echoes Column */}
+              <div className="character-custom-scope order-4 space-y-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Echoes</label>
+                    <h3 className="flex-1 border-b border-white/10 pb-2 font-display text-lg text-foreground">Echoes</h3>
                     {canEdit && isEditing && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => setIsAddingEcho(true)}
-                        className="h-7 border-primary/30 text-primary hover:bg-primary/10"
+                        className="character-accent-button mb-2 h-7"
                       >
                         <Plus className="w-3 h-3 mr-1" /> Add Echo
                       </Button>
@@ -1071,7 +875,7 @@ export function CharacterSheet({
                         <div key={i} className="space-y-2">
                           <div className={`relative p-3 rounded-lg border transition-all ${
                             echo.isSummoned
-                              ? "text-cyan-300 border-cyan-500/30 bg-cyan-500/10 shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400/30"
+                              ? "character-accent-text character-accent-border character-accent-soft character-accent-glow"
                               : "bg-secondary/30 border-white/5 hover:bg-secondary/50 hover:border-white/10"
                           }`}>
                             <div className="flex items-start justify-between gap-2">
@@ -1080,7 +884,7 @@ export function CharacterSheet({
                                   <div className="flex items-center gap-2 mb-1">
                                     <Sparkles className="w-4 h-4 shrink-0" />
                                     <p className="font-medium text-sm text-foreground truncate">{echo.name || `Echo ${i + 1}`}</p>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest border border-amber-400/30 bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded shrink-0">
+                                    <span className="character-accent-border character-accent-soft character-accent-text text-[10px] font-bold uppercase tracking-widest border px-1.5 py-0.5 rounded shrink-0">
                                       AC {echo.armorClass}
                                     </span>
                                   </div>
@@ -1088,6 +892,7 @@ export function CharacterSheet({
                               ) : (
                                 <EchoPopup
                                   echo={echo}
+                                  accentColor={accentColor}
                                   canEdit={canEdit}
                                   onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
                                   onDelete={() => handleDeleteEchoAtIndex(i)}
@@ -1096,7 +901,7 @@ export function CharacterSheet({
                                     <div className="flex items-center gap-2 mb-1">
                                       <Sparkles className="w-4 h-4 shrink-0" />
                                       <p className="font-medium text-sm text-foreground truncate">{echo.name || `Echo ${i + 1}`}</p>
-                                      <span className="text-[10px] font-bold uppercase tracking-widest border border-amber-400/30 bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded shrink-0">
+                                      <span className="character-accent-border character-accent-soft character-accent-text text-[10px] font-bold uppercase tracking-widest border px-1.5 py-0.5 rounded shrink-0">
                                         AC {echo.armorClass}
                                       </span>
                                     </div>
@@ -1111,7 +916,7 @@ export function CharacterSheet({
                                   onClick={() => handleEchoSummonToggle(i)}
                                   className={`shrink-0 text-[10px] h-6 px-1.5 ${
                                     echo.isSummoned
-                                      ? "border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                                      ? "character-accent-button"
                                       : "border-white/10 text-muted-foreground hover:bg-white/5"
                                   }`}
                                 >
@@ -1143,14 +948,14 @@ export function CharacterSheet({
                             <div className="mt-2 space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Health</span>
-                                <span className="text-xs font-bold text-cyan-200">
+                                <span className="character-accent-text text-xs font-bold">
                                   {echo.currentHealth} / {echo.maxHealth}
                                 </span>
                               </div>
                               <div className="h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
                                 <div
-                                  className="h-full bg-cyan-400 transition-all duration-300"
-                                  style={{ width: `${hpPercent}%` }}
+                                  className="h-full transition-all duration-300"
+                                  style={{ width: `${hpPercent}%`, backgroundColor: "var(--character-accent)" }}
                                 />
                               </div>
                               {canEdit && !isEditing && echo.isSummoned && (
@@ -1188,7 +993,7 @@ export function CharacterSheet({
                                           type="button"
                                           variant="outline"
                                           size="sm"
-                                          className="flex-1 h-7 px-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-[11px]"
+                                          className="character-accent-button flex-1 h-7 px-2 text-[11px]"
                                           onClick={() => handleEchoMoveHit(echo, i, move, moveIndex)}
                                           data-testid={`button-echo-hit-${i}-${moveIndex}`}
                                         >
@@ -1199,7 +1004,7 @@ export function CharacterSheet({
                                           type="button"
                                           variant="outline"
                                           size="sm"
-                                          className="flex-1 h-7 px-2 border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px]"
+                                          className="character-accent-button flex-1 h-7 px-2 text-[11px]"
                                           onClick={() => handleEchoMoveDamage(echo, i, move, moveIndex)}
                                           data-testid={`button-echo-dmg-${i}-${moveIndex}`}
                                         >
@@ -1213,7 +1018,7 @@ export function CharacterSheet({
                                             {lastEchoMoveRoll.type === "hit" ? "Hit Roll" : "Damage Roll"}
                                           </span>
                                           <p className="text-sm text-foreground mt-1">{lastEchoMoveRoll.result}</p>
-                                          <p className="text-lg font-display font-bold text-primary mt-1">
+                                          <p className="character-accent-text text-lg font-display font-bold mt-1">
                                             = {lastEchoMoveRoll.total}
                                           </p>
                                         </div>
@@ -1228,6 +1033,7 @@ export function CharacterSheet({
                           {isEditing && (
                             <EchoPopup
                               echo={echo}
+                              accentColor={accentColor}
                               canEdit={canEdit}
                               onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
                               onDelete={() => handleDeleteEchoAtIndex(i)}
@@ -1236,7 +1042,7 @@ export function CharacterSheet({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="w-full h-7 border-primary/30 text-primary hover:bg-primary/10"
+                                className="character-accent-button w-full h-7"
                               >
                                 <Edit2 className="w-3 h-3 mr-1" /> Edit Echo
                               </Button>
@@ -1250,8 +1056,8 @@ export function CharacterSheet({
               </div>
 
               {/* Stats Block */}
-              <div className="bg-black/30 rounded-xl p-5 border border-white/5 space-y-4">
-                <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Stats</h4>
+              <div className="order-1 h-full space-y-4 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-5">
+                <h4 className="text-sm font-bold uppercase tracking-widest text-primary/80">Stats</h4>
                 <div className="grid grid-cols-2 gap-3">
                   {[STAT_FIELDS.slice(0, 3), STAT_FIELDS.slice(3)].map((column, columnIndex) => (
                     <div key={columnIndex} className="space-y-2">
@@ -1282,14 +1088,51 @@ export function CharacterSheet({
                     </div>
                   ))}
                 </div>
+
+                <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
+                  <div className="px-1 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Armor Class</p>
+                    {isEditing ? (
+                      <div className="mt-1 space-y-1">
+                        <Input
+                          type="number"
+                          min={1}
+                          value={editData.armorClass ?? 8}
+                          onChange={(event) => setEditData({
+                            ...editData,
+                            armorClass: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                          })}
+                          className="h-8 border-primary/20 bg-black/40 px-2 font-display text-primary"
+                          data-testid="input-armor-class"
+                        />
+                        <p className="text-[9px] leading-snug text-muted-foreground">
+                          Base + DEX ({editData.armorClass ?? 8} + {editStats.dexterity})
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <p className="font-display text-xl text-primary" data-testid="text-armor-class">{effectiveArmorClass}</p>
+                        <p className="text-[9px] leading-snug text-muted-foreground">
+                          Base {baseArmorClass} + {armorDexterityMode === "full" ? "DEX" : armorDexterityMode === "half" ? "Half DEX" : "No DEX"} {dexterityBonus}{starSeekingArmorBonus > 0 ? ` + Star Seeking ${starSeekingArmorBonus}` : ""}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-l border-white/10 px-4 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Proficiency</p>
+                    <p className="mt-1 font-display text-xl text-primary">+{proficiencyBonus}</p>
+                    <p className="text-[9px] leading-snug text-muted-foreground">{character.totalSoulFragments ?? 0} total shards</p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* MIDDLE & RIGHT COLUMNS: Traits, Aspect, Memories */}
-            <div className="lg:col-span-2 space-y-8">
+            {/* Aspect, attributes, memories, and notes */}
+            <div className="contents">
               
               {/* Aspect Block */}
-              <div className="bg-gradient-to-br from-primary/5 to-transparent rounded-xl p-6 border border-primary/20">
+              <div className="order-2 h-full rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-6 lg:col-span-2">
                 <div className="flex items-start justify-between mb-6">
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-widest text-primary/80 flex items-center gap-2 mb-1">
@@ -1397,7 +1240,7 @@ export function CharacterSheet({
               </div>
 
               {/* Attributes & Memories Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="order-5 grid grid-cols-1 gap-6 md:grid-cols-2 lg:col-span-2">
                 {/* Attributes */}
                 <div className="space-y-4">
                   <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Attributes</h3>
@@ -1406,6 +1249,7 @@ export function CharacterSheet({
                       title="Edit Attributes"
                       traits={editData.attributes || []}
                       onChange={t => setEditData({ ...editData, attributes: t })}
+                      accentColor={accentColor}
                     />
                   ) : (
                     <div className="flex flex-col gap-2">
@@ -1417,9 +1261,10 @@ export function CharacterSheet({
                             canRoll={canEdit}
                             stats={characterStats}
                             proficiencyBonus={proficiencyBonus}
+                            accentColor={accentColor}
                             onChangeForm={canEdit ? (limbId, formId) => handleStarSeekingFormChange(i, limbId, formId) : undefined}
                           >
-                            <div className="cursor-pointer rounded-lg border border-amber-300/40 bg-amber-400/10 p-3 shadow-[0_0_18px_rgba(251,191,36,0.14)] transition-all hover:border-amber-200/60 hover:bg-amber-400/15">
+                            <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow cursor-pointer rounded-lg border p-3 transition-all">
                               <div className="flex items-center gap-2"><Star className="h-4 w-4 fill-amber-300/20 text-amber-300" /><p className="text-sm font-medium text-amber-200">{attr.name}</p></div>
                               <p className="mt-1 truncate text-xs text-muted-foreground">{attr.effect}</p>
                               {(() => {
@@ -1435,8 +1280,8 @@ export function CharacterSheet({
                             </div>
                           </StarSeekingPopup>
                         ) : attr.reforging ? (
-                          <ReforgingPopup key={i} trait={attr} onChangeCount={canEdit ? (monsterIndex, delta) => handleReforgeCountChange(i, monsterIndex, delta) : undefined}>
-                            <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 shadow-[0_0_18px_rgba(239,68,68,0.14)] transition-all cursor-pointer hover:border-red-400/60 hover:bg-red-500/15">
+                          <ReforgingPopup key={i} trait={attr} accentColor={accentColor} onChangeCount={canEdit ? (monsterIndex, delta) => handleReforgeCountChange(i, monsterIndex, delta) : undefined}>
+                            <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow rounded-lg border p-3 transition-all cursor-pointer">
                               <div className="flex items-center gap-2"><Flame className="h-4 w-4 text-orange-400" /><p className="text-sm font-medium text-red-200">{attr.name}</p></div>
                               {attr.effect && attr.effect.trim() !== "?" && <p className="mt-1 truncate text-xs text-muted-foreground">{attr.effect}</p>}
                               <div className="ml-6 mt-2 flex items-center justify-between rounded-md border border-red-500/20 bg-black/30 px-2.5 py-1.5">
@@ -1446,8 +1291,8 @@ export function CharacterSheet({
                             </div>
                           </ReforgingPopup>
                         ) : attr.rememberedBy ? (
-                          <RememberedByPopup key={i} trait={attr}>
-                            <div className="p-3 bg-fuchsia-500/10 border border-fuchsia-400/40 rounded-lg cursor-pointer hover:bg-fuchsia-500/15 hover:border-fuchsia-300/60 transition-all shadow-[0_0_18px_rgba(232,121,249,0.12)]">
+                          <RememberedByPopup key={i} trait={attr} accentColor={accentColor}>
+                            <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow p-3 border rounded-lg cursor-pointer transition-all">
                               <div className="flex items-center gap-2"><Fingerprint className="w-4 h-4 text-fuchsia-300" /><p className="font-medium text-sm text-fuchsia-200">{attr.name}</p></div>
                               <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
                               <div className="mt-2 ml-6 px-2.5 py-1.5 rounded-md bg-black/30 border border-fuchsia-400/20 flex items-center justify-between">
@@ -1460,10 +1305,11 @@ export function CharacterSheet({
                           <ExpandedTraitPopup
                             key={i}
                             trait={attr}
+                            accentColor={accentColor}
                             onActivate={canEdit ? (name) => handleActivateSubAttribute(i, name) : undefined}
                             onLearn={canEdit && attr.activeSubAttribute ? () => handleLearnSubAttribute(i) : undefined}
                           >
-                            <div className="p-3 bg-emerald-400/10 border border-emerald-300/40 rounded-lg cursor-pointer hover:bg-emerald-400/15 hover:border-emerald-200/60 transition-all shadow-[0_0_18px_rgba(110,231,183,0.14)]">
+                            <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow p-3 border rounded-lg cursor-pointer transition-all">
                               <div className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-300" /><p className="font-medium text-sm text-emerald-200">{attr.name}</p></div>
                               <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
                               {attr.activeSubAttribute && (
@@ -1511,6 +1357,7 @@ export function CharacterSheet({
                             <div className="flex items-start justify-between gap-2">
                               <TraitPopup
                                 trait={mem}
+                                accentColor={mem.memoryType === "weapon" ? accentColor : undefined}
                                 contentClassName={MEMORY_DIALOG_CONTENT_CLASS}
                                 bodyClassName={MEMORY_DIALOG_BODY_CLASS}
                               >
@@ -1519,11 +1366,6 @@ export function CharacterSheet({
                                     <TypeIcon className="w-4 h-4 shrink-0" />
                                     <p className="font-medium text-sm text-foreground truncate">{mem.name}</p>
                                     <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">{memoryTypeLabel}</span>
-                                    {(mem.memoryType === "weapon" || mem.memoryType === "armor") && (
-                                      <span className={`text-[9px] uppercase tracking-widest font-bold ${mem.isProficient ? "text-emerald-300" : "text-red-300"}`}>
-                                        {mem.isProficient ? `Proficient +${proficiencyBonus}` : "Not proficient"}
-                                      </span>
-                                    )}
                                   </div>
                                   <p className="text-xs text-muted-foreground truncate">{mem.effect}</p>
                                   <div className="flex items-center gap-2 mt-1.5">
@@ -1553,7 +1395,9 @@ export function CharacterSheet({
                                   onClick={() => handleSummonToggle(i)}
                                   className={`shrink-0 text-xs h-7 ${
                                     mem.isSummoned
-                                      ? "border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                                      ? mem.memoryType === "weapon"
+                                        ? "character-accent-button"
+                                        : "border-primary/50 text-primary hover:bg-primary/10"
                                       : "border-white/10 text-muted-foreground hover:bg-white/5"
                                   }`}
                                   data-testid={`button-summon-${i}`}
@@ -1569,7 +1413,7 @@ export function CharacterSheet({
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="flex-1 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-xs"
+                                    className={`flex-1 text-xs ${mem.memoryType === "weapon" ? "character-accent-button" : "border-primary/30 text-primary hover:bg-primary/10"}`}
                                     onClick={() => handleWeaponHit(mem, i)}
                                     data-testid={`button-weapon-hit-${i}`}
                                   >
@@ -1578,7 +1422,7 @@ export function CharacterSheet({
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
+                                    className={`flex-1 text-xs ${mem.memoryType === "weapon" ? "character-accent-button" : "border-primary/30 text-primary hover:bg-primary/10"}`}
                                     onClick={() => handleWeaponDamage(mem, i)}
                                     data-testid={`button-weapon-dmg-${i}`}
                                   >
@@ -1607,13 +1451,14 @@ export function CharacterSheet({
               </div>
 
               {/* Inventory / Notes */}
-              <div className="space-y-4">
+              <div className="order-6 space-y-4 lg:col-span-3">
                 <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Inventory/Notes</h3>
                 {isEditing ? (
                   <Textarea
+                    ref={inventoryNotesRef}
                     value={editData.inventoryNotes ?? ""}
                     onChange={e => setEditData({ ...editData, inventoryNotes: e.target.value })}
-                    className="bg-black/50 border-white/10 min-h-[180px]"
+                    className="min-h-[180px] resize-y overflow-hidden bg-black/50 border-white/10"
                     placeholder="Track inventory, supplies, reminders, and session notes."
                     data-testid="textarea-inventory-notes"
                   />
@@ -1681,7 +1526,10 @@ export function CharacterSheet({
             setNewEchoDraft(createDefaultEcho());
           }}
         >
-          <DialogContent className={ECHO_ADD_CONTENT_CLASS}>
+          <DialogContent
+            className={`character-custom-scope character-accent-border character-accent-glow ${ECHO_ADD_CONTENT_CLASS}`}
+            style={{ "--character-accent": accentColor } as React.CSSProperties}
+          >
             <div className="flex h-full min-h-0 flex-col">
               <DialogHeader className="px-6 pt-6 pb-3 border-b border-white/10">
                 <DialogTitle className="font-display text-xl text-primary">Add Echo</DialogTitle>

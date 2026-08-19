@@ -16,6 +16,7 @@ interface ExpandedTraitPopupProps {
   children: React.ReactNode;
   onActivate?: (name: string) => void;
   onLearn?: () => void;
+  accentColor?: string;
 }
 
 function TraitDetails({ trait }: { trait: Trait }) {
@@ -38,7 +39,7 @@ function TraitDetails({ trait }: { trait: Trait }) {
   );
 }
 
-export function ExpandedTraitPopup({ trait, children, onActivate, onLearn }: ExpandedTraitPopupProps) {
+export function ExpandedTraitPopup({ trait, children, onActivate, onLearn, accentColor = "#b45353" }: ExpandedTraitPopupProps) {
   const choices = trait.subAttributes || [];
   const active = choices.find((choice) => choice.name === trait.activeSubAttribute);
   const [selected, setSelected] = useState<Trait | null>(active || choices[0] || null);
@@ -50,7 +51,10 @@ export function ExpandedTraitPopup({ trait, children, onActivate, onLearn }: Exp
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="glass-panel border-emerald-300/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)] shadow-[0_0_45px_rgba(110,231,183,0.1)]">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-emerald-300/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader className="pb-4">
           <div className="flex items-start justify-between gap-4 pr-8">
             <DialogTitle className="font-display text-2xl text-emerald-200 text-glow flex items-center gap-2">

@@ -30,6 +30,7 @@ export function StarSeekingPopup({
   canRoll = false,
   stats,
   proficiencyBonus,
+  accentColor = "#b45353",
 }: {
   trait: Trait;
   children: React.ReactNode;
@@ -37,6 +38,7 @@ export function StarSeekingPopup({
   canRoll?: boolean;
   stats: CharacterStats;
   proficiencyBonus: number;
+  accentColor?: string;
 }) {
   const { currentUser } = useAuth();
   const [lastRoll, setLastRoll] = useState<RollResult | null>(null);
@@ -79,7 +81,10 @@ export function StarSeekingPopup({
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="glass-panel border-amber-300/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,43rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)] shadow-[0_0_50px_rgba(251,191,36,0.12)]">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-amber-300/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,43rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader className="pb-4">
           <DialogTitle className="flex items-center gap-2 font-display text-2xl text-amber-200 text-glow">
             <Star className="h-5 w-5 fill-amber-300/30 text-amber-300" /> {trait.name}

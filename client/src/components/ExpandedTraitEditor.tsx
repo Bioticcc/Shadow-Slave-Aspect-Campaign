@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TraitEditor } from "./TraitEditor";
 
-export function ExpandedTraitEditor({ trait, onChange }: { trait: Trait; onChange: (trait: Trait) => void }) {
+export function ExpandedTraitEditor({ trait, onChange, accentColor = "#b45353" }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string }) {
   const choices = trait.subAttributes || [];
   return (
     <Dialog>
@@ -19,7 +19,10 @@ export function ExpandedTraitEditor({ trait, onChange }: { trait: Trait; onChang
           </span>
         </button>
       </DialogTrigger>
-      <DialogContent className="glass-panel border-emerald-300/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto shadow-[0_0_45px_rgba(110,231,183,0.1)]">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-emerald-300/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader><DialogTitle className="font-display text-2xl text-emerald-200 text-glow">Edit {trait.name}</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-3">
           <Input value={trait.name} onChange={(e) => onChange({ ...trait, name: e.target.value })} placeholder="Name" className="bg-black/50" />
@@ -35,7 +38,7 @@ export function ExpandedTraitEditor({ trait, onChange }: { trait: Trait; onChang
               </SelectContent>
             </Select>
           </div>
-          <TraitEditor title="Venerable Librarian Attributes" traits={choices} addButtonPlacement="bottom" accent="emerald" onChange={(subAttributes) => {
+          <TraitEditor title="Venerable Librarian Attributes" traits={choices} addButtonPlacement="bottom" accent="emerald" accentColor={accentColor} onChange={(subAttributes) => {
             const activeStillExists = subAttributes.some((choice) => choice.name === trait.activeSubAttribute);
             onChange({ ...trait, subAttributes, activeSubAttribute: activeStillExists ? trait.activeSubAttribute : undefined });
           }} />

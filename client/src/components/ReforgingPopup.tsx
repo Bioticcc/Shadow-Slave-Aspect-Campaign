@@ -7,10 +7,12 @@ export function ReforgingPopup({
   trait,
   children,
   onChangeCount,
+  accentColor = "#b45353",
 }: {
   trait: Trait;
   children: React.ReactNode;
   onChangeCount?: (monsterIndex: number, delta: number) => void;
+  accentColor?: string;
 }) {
   const tracker = trait.reforging;
   if (!tracker) return <>{children}</>;
@@ -18,7 +20,10 @@ export function ReforgingPopup({
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="glass-panel border-red-500/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)] shadow-[0_0_45px_rgba(239,68,68,0.12)]">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-red-500/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader className="pb-4">
           <DialogTitle className="font-display text-2xl text-red-300 text-glow flex items-center gap-2">
             <Flame className="w-5 h-5 text-orange-400" /> {trait.name}

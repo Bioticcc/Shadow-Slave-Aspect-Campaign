@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 
 const newPerson = (): RememberedPerson => ({ name: "", effect: "", nameKnown: true, effectKnown: false });
 
-export function RememberedByEditor({ trait, onChange }: { trait: Trait; onChange: (trait: Trait) => void }) {
+export function RememberedByEditor({ trait, onChange, accentColor = "#b45353" }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string }) {
   const people = trait.rememberedBy || [];
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<RememberedPerson>(newPerson());
@@ -29,7 +29,10 @@ export function RememberedByEditor({ trait, onChange }: { trait: Trait; onChange
           </span>
         </button>
       </DialogTrigger>
-      <DialogContent className="glass-panel border-fuchsia-400/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-fuchsia-400/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader><DialogTitle className="font-display text-2xl text-fuchsia-200 text-glow">Edit {trait.name}</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-3">
           <Input value={trait.name} onChange={(event) => onChange({ ...trait, name: event.target.value })} placeholder="Name" className="bg-black/50" />

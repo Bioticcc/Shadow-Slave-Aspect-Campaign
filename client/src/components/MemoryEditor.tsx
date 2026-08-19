@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -315,6 +316,16 @@ export function MemoryEditor({ memories, onChange, proficiencyBonus = 2 }: Memor
                       ))}
                     </SelectContent>
                   </Select>
+                  {(mem.memoryType === "weapon" || mem.memoryType === "armor") && (
+                    <label className="flex h-10 shrink-0 items-center gap-2 rounded-md border border-emerald-400/20 bg-emerald-400/5 px-2.5 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                      <Checkbox
+                        checked={!!mem.isProficient}
+                        onCheckedChange={(checked) => handleUpdate(idx, { isProficient: checked === true })}
+                        className="h-3.5 w-3.5 border-emerald-400 data-[state=checked]:bg-emerald-400 data-[state=checked]:text-emerald-950"
+                      />
+                      Proficient
+                    </label>
+                  )}
                   <div className="flex items-end gap-2">
                     <div>
                       <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Max Durability</span>
@@ -439,20 +450,6 @@ export function MemoryEditor({ memories, onChange, proficiencyBonus = 2 }: Memor
                     </>
                   ) : null}
                 </div>
-
-                {(mem.memoryType === "weapon" || mem.memoryType === "armor") && (
-                  <div className="flex items-center justify-between rounded-lg border border-emerald-400/15 bg-emerald-400/5 px-3 py-2">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-widest text-emerald-300">Proficient</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {mem.memoryType === "weapon"
-                          ? `Adds +${proficiencyBonus} to hit connection.`
-                          : "Without proficiency, this armor's AC is halved."}
-                      </p>
-                    </div>
-                    <Switch checked={!!mem.isProficient} onCheckedChange={(checked) => handleUpdate(idx, { isProficient: checked })} />
-                  </div>
-                )}
 
                 {mem.memoryType !== "weapon" ? (
                   <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-2">
@@ -621,6 +618,16 @@ export function MemoryEditor({ memories, onChange, proficiencyBonus = 2 }: Memor
                     ))}
                   </SelectContent>
                 </Select>
+                {(newMemory.memoryType === "weapon" || newMemory.memoryType === "armor") && (
+                  <label className="flex h-10 shrink-0 items-center gap-2 rounded-md border border-emerald-400/20 bg-emerald-400/5 px-2.5 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                    <Checkbox
+                      checked={!!newMemory.isProficient}
+                      onCheckedChange={(checked) => setNewMemory({ ...newMemory, isProficient: checked === true })}
+                      className="h-3.5 w-3.5 border-emerald-400 data-[state=checked]:bg-emerald-400 data-[state=checked]:text-emerald-950"
+                    />
+                    Proficient
+                  </label>
+                )}
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">Durability:</span>
                   <Input
@@ -724,20 +731,6 @@ export function MemoryEditor({ memories, onChange, proficiencyBonus = 2 }: Memor
                   </>
                 ) : null}
               </div>
-
-              {(newMemory.memoryType === "weapon" || newMemory.memoryType === "armor") && (
-                <div className="flex items-center justify-between rounded-lg border border-emerald-400/15 bg-emerald-400/5 px-3 py-2">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-300">Proficient</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {newMemory.memoryType === "weapon"
-                        ? `Adds +${proficiencyBonus} to hit connection.`
-                        : "Without proficiency, this armor's AC is halved."}
-                    </p>
-                  </div>
-                  <Switch checked={!!newMemory.isProficient} onCheckedChange={(checked) => setNewMemory({ ...newMemory, isProficient: checked })} />
-                </div>
-              )}
 
               {newMemory.memoryType !== "weapon" ? (
                 <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-2">

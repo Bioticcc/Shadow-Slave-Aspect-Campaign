@@ -1,10 +1,21 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Dices, X, RotateCcw, Triangle, Pentagon, Hexagon, Octagon, Diamond, Circle, Box } from "lucide-react";
+import { Dices, X, RotateCcw, Triangle, Pentagon, Hexagon, Octagon, Diamond, Circle, Box, Gauge, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
+import { useUpdateCharacter } from "@/hooks/use-characters";
 import { sendWsMessage, onDiceRoll } from "@/hooks/use-websocket";
-import { WS_EVENTS, type DiceRollPayload } from "@shared/schema";
+import {
+  getProficiencyBonus,
+  normalizeEchoes,
+  normalizeMemory,
+  normalizeStats,
+  serializeEchoes,
+  WS_EVENTS,
+  type Character,
+  type CharacterStats,
+  type DiceRollPayload,
+} from "@shared/schema";
 
 const DICE_ICONS: Record<string, typeof Dices> = {
   D4: Triangle,
@@ -26,21 +37,100 @@ const DICE_TYPES = [
   { name: "D4", sides: 4 },
 ];
 
+const SAVES: { label: string; short: string; stat: keyof CharacterStats }[] = [
+  { label: "Strength", short: "STR", stat: "strength" },
+  { label: "Dexterity", short: "DEX", stat: "dexterity" },
+  { label: "Constitution", short: "CON", stat: "constitution" },
+  { label: "Intelligence", short: "INT", stat: "intelligence" },
+  { label: "Wisdom", short: "WIS", stat: "wisdom" },
+  { label: "Charisma", short: "CHA", stat: "charisma" },
+];
+
+const CHECKS: { label: string; short: string; stat: keyof CharacterStats }[] = [
+  { label: "Initiative", short: "INT", stat: "intelligence" },
+  { label: "Athletics", short: "STR", stat: "strength" },
+  { label: "Deception", short: "CHA", stat: "charisma" },
+  { label: "Intimidation", short: "CHA", stat: "charisma" },
+  { label: "Investigation", short: "INT", stat: "intelligence" },
+  { label: "Perception", short: "INT", stat: "intelligence" },
+  { label: "Persuasion", short: "CHA", stat: "charisma" },
+  { label: "Slight of Hand", short: "DEX", stat: "dexterity" },
+  { label: "Stealth", short: "DEX", stat: "dexterity" },
+  { label: "Survival", short: "WIS", stat: "wisdom" },
+];
+
 type DiceSelection = Record<string, number>;
-type RollResult = { die: string; sides: number; rolls: number[]; subtotal: number };
+type RollResult = DiceRollPayload["results"][number];
 type DisplayResult = { user: string; results: RollResult[]; total: number; id: number };
 
 let nextId = 0;
 
-export function DiceRoller() {
+function formatModifier(modifier: number) {
+  return modifier >= 0 ? `+${modifier}` : String(modifier);
+}
+
+function RollResultLines({
+  results,
+  total,
+  totalTestId,
+}: {
+  results: RollResult[];
+  total: number;
+  totalTestId?: string;
+}) {
+  return (
+    <>
+      {results.map((result, i) => (
+        <div key={i} className="text-sm">
+          <span className="text-muted-foreground font-medium">
+            {result.label || `${result.rolls.length}${result.die}`}:
+          </span>{" "}
+          <span className="text-foreground">
+            {result.rolls.map((value, j) => (
+              <span key={j}>
+                <span className={
+                  value === result.sides ? "text-emerald-400 font-bold" :
+                  value === 1 ? "text-destructive font-bold" : ""
+                }>{value}</span>
+                {j < result.rolls.length - 1 ? " + " : ""}
+              </span>
+            ))}
+            {result.modifier !== undefined && (
+              <span className="text-muted-foreground"> {formatModifier(result.modifier)}</span>
+            )}
+            {(result.rolls.length > 1 || result.modifier !== undefined) && (
+              <span className="text-muted-foreground"> = {result.subtotal}</span>
+            )}
+          </span>
+          {result.character && (
+            <span className="block text-[10px] text-muted-foreground/70">{result.character}</span>
+          )}
+        </div>
+      ))}
+      <div className="pt-1 border-t border-white/10 text-right">
+        <span className="text-xl font-display font-bold text-primary" data-testid={totalTestId}>{total}</span>
+      </div>
+    </>
+  );
+}
+
+export function DiceRoller({
+  activeCharacter,
+  onOpenChange,
+}: {
+  activeCharacter?: Character;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const { currentUser } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [selected, setSelected] = useState<DiceSelection>({});
   const [results, setResults] = useState<RollResult[] | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [incomingRolls, setIncomingRolls] = useState<DisplayResult[]>([]);
+  const updateCharacter = useUpdateCharacter();
 
   const totalSelected = Object.values(selected).reduce((a, b) => a + b, 0);
+  const characterStats = normalizeStats(activeCharacter?.stats);
 
   useEffect(() => {
     return onDiceRoll((payload: DiceRollPayload) => {
@@ -98,6 +188,80 @@ export function DiceRoller() {
     }, 400);
   };
 
+  const handleModifierRoll = (label: string, stat: keyof CharacterStats) => {
+    if (!activeCharacter || isRolling) return;
+
+    setIsRolling(true);
+    setTimeout(() => {
+      const actualStat = label === "Perception" && activeCharacter.name.trim().toLowerCase() === "wilovan"
+        ? "dexterity"
+        : stat;
+      const modifier = characterStats[actualStat];
+      const naturalRoll = Math.floor(Math.random() * 20) + 1;
+      const rollResults: RollResult[] = [{
+        die: "D20",
+        sides: 20,
+        rolls: [naturalRoll],
+        modifier,
+        subtotal: naturalRoll + modifier,
+        label,
+        character: activeCharacter.name,
+      }];
+
+      setResults(rollResults);
+      setIsRolling(false);
+      sendWsMessage({
+        type: WS_EVENTS.DICE_ROLL,
+        payload: {
+          user: currentUser || "Unknown",
+          results: rollResults,
+          total: rollResults[0].subtotal,
+        },
+      });
+    }, 400);
+  };
+
+  const handleLongRest = async () => {
+    if (!activeCharacter || updateCharacter.isPending) return;
+
+    const proficiencyBonus = getProficiencyBonus(activeCharacter.totalSoulFragments ?? 0);
+    const memories = (activeCharacter.memories || []).map((rawMemory) => {
+      const memory = normalizeMemory(rawMemory, proficiencyBonus);
+      if (memory.isSummoned) return memory;
+      return {
+        ...memory,
+        currentDurability: Math.min(
+          memory.maxDurability,
+          memory.currentDurability + (Math.max(0, memory.healRate) * 8),
+        ),
+      };
+    });
+    const echoes = normalizeEchoes(activeCharacter.echoes).map((echo) => {
+      if (echo.isSummoned) return echo;
+      return {
+        ...echo,
+        currentHealth: Math.min(
+          echo.maxHealth,
+          echo.currentHealth + (Math.max(0, echo.healRate) * 8),
+        ),
+      };
+    });
+
+    try {
+      await updateCharacter.mutateAsync({
+        id: activeCharacter.id,
+        updates: {
+          currentEssence: activeCharacter.maxEssence ?? 10,
+          memories,
+          echoes: serializeEchoes(echoes),
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to complete long rest";
+      alert(message);
+    }
+  };
+
   const grandTotal = results ? results.reduce((a, r) => a + r.subtotal, 0) : 0;
 
   const handleReset = () => {
@@ -126,26 +290,7 @@ export function DiceRoller() {
                 <span className="text-xs text-muted-foreground">rolled dice</span>
               </div>
               <div className="px-4 py-3 space-y-1">
-                {roll.results.map((r, i) => (
-                  <div key={i} className="text-sm">
-                    <span className="text-muted-foreground font-medium">{r.rolls.length}{r.die}:</span>{" "}
-                    <span className="text-foreground">
-                      {r.rolls.map((v, j) => (
-                        <span key={j}>
-                          <span className={
-                            v === r.sides ? "text-emerald-400 font-bold" :
-                            v === 1 ? "text-destructive font-bold" : ""
-                          }>{v}</span>
-                          {j < r.rolls.length - 1 ? " + " : ""}
-                        </span>
-                      ))}
-                      {r.rolls.length > 1 && <span className="text-muted-foreground"> = {r.subtotal}</span>}
-                    </span>
-                  </div>
-                ))}
-                <div className="pt-1 border-t border-white/10 text-right">
-                  <span className="text-xl font-display font-bold text-primary">{roll.total}</span>
-                </div>
+                <RollResultLines results={roll.results} total={roll.total} />
               </div>
             </motion.div>
           ))}
@@ -161,12 +306,40 @@ export function DiceRoller() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               transition={{ duration: 0.2 }}
-              className="w-72 glass-panel rounded-2xl border border-white/10 shadow-2xl shadow-black/50 overflow-hidden"
+              className="w-[min(52rem,calc(100vw-3rem))] glass-panel rounded-2xl border border-white/10 shadow-2xl shadow-black/50 overflow-hidden"
             >
               <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                <h3 className="font-display text-lg text-primary flex items-center gap-2">
-                  <Dices className="w-5 h-5" /> Dice Roller
-                </h3>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="mr-2 font-display text-lg text-primary flex items-center gap-2">
+                      <Dices className="w-5 h-5" /> Dice Roller
+                    </h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-primary/30 text-primary hover:bg-primary/10"
+                      onClick={handleLongRest}
+                      disabled={!activeCharacter || updateCharacter.isPending}
+                      data-testid="button-long-rest"
+                    >
+                      <Moon className="mr-1.5 h-3.5 w-3.5" />
+                      {updateCharacter.isPending ? "Resting..." : "Longrest"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-primary/30 text-primary hover:bg-primary/10"
+                      onClick={() => handleModifierRoll("Initiative", "intelligence")}
+                      disabled={!activeCharacter || isRolling}
+                      data-testid="button-initiative"
+                    >
+                      <Gauge className="mr-1.5 h-3.5 w-3.5" /> Initiative
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {activeCharacter ? `Active character: ${activeCharacter.name}` : "No active character assigned"}
+                  </p>
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -178,46 +351,102 @@ export function DiceRoller() {
                 </Button>
               </div>
 
-              <div className="p-3 space-y-1.5 max-h-[320px] overflow-y-auto">
-                {DICE_TYPES.map((dice) => {
-                  const count = selected[dice.name] || 0;
-                  return (
-                    <div
-                      key={dice.name}
-                      className="flex items-center justify-between p-2 rounded-lg bg-black/30 border border-white/5"
-                    >
-                      <div className="flex items-center gap-3">
-                        {(() => { const Icon = DICE_ICONS[dice.name] || Dices; return <Icon className="w-5 h-5 text-muted-foreground" />; })()}
-                        <span className="text-sm font-bold text-foreground">{dice.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
+              <div>
+                <div className="grid grid-cols-2">
+                  <section className="relative min-h-0 min-w-0">
+                    <div className="absolute inset-0 space-y-1.5 overflow-y-auto p-3 pr-2">
+                      <h4 className="px-1 pb-1 text-xs font-bold uppercase tracking-widest text-primary">Saves</h4>
+                      {SAVES.map((save) => (
                         <Button
+                          key={save.stat}
                           variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => adjustDie(dice.name, -1)}
-                          disabled={count === 0}
-                          data-testid={`button-dice-minus-${dice.name}`}
+                          className="w-full h-10 justify-between px-3 bg-black/30 border border-white/5 hover:bg-white/10"
+                          disabled={!activeCharacter || isRolling}
+                          onClick={() => handleModifierRoll(`${save.label} Save`, save.stat)}
+                          data-testid={`button-save-${save.stat}`}
                         >
-                          <span className="text-lg font-bold">−</span>
+                          <span className="text-sm">{save.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {save.short} {formatModifier(characterStats[save.stat])}
+                          </span>
                         </Button>
-                        <span className="w-6 text-center font-bold text-foreground text-sm" data-testid={`text-dice-count-${dice.name}`}>
-                          {count}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => adjustDie(dice.name, 1)}
-                          disabled={count >= 20}
-                          data-testid={`button-dice-plus-${dice.name}`}
-                        >
-                          <span className="text-lg font-bold">+</span>
-                        </Button>
-                      </div>
+                      ))}
+                      <h4 className="px-1 pb-1 pt-4 text-xs font-bold uppercase tracking-widest text-primary">Checks</h4>
+                      {CHECKS.map((check) => {
+                        const stat = check.label === "Perception" && activeCharacter?.name.trim().toLowerCase() === "wilovan"
+                          ? "dexterity"
+                          : check.stat;
+                        const short = stat === "dexterity" && check.label === "Perception" ? "DEX" : check.short;
+                        return (
+                          <Button
+                            key={check.label}
+                            variant="ghost"
+                            className="w-full h-10 justify-between px-3 bg-black/30 border border-white/5 hover:bg-white/10"
+                            disabled={!activeCharacter || isRolling}
+                            onClick={() => handleModifierRoll(check.label, check.stat)}
+                            data-testid={`button-check-${check.label.toLowerCase().replaceAll(" ", "-")}`}
+                          >
+                            <span className="text-sm">{check.label}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {short} {formatModifier(characterStats[stat])}
+                            </span>
+                          </Button>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </section>
+
+                  <section className="min-w-0 space-y-1.5 border-l border-white/10 p-3">
+                    <h4 className="px-1 pb-1 text-xs font-bold uppercase tracking-widest text-primary">Dice</h4>
+                    {DICE_TYPES.map((dice) => {
+                      const count = selected[dice.name] || 0;
+                      return (
+                        <div
+                          key={dice.name}
+                          className="flex items-center justify-between p-2 rounded-lg bg-black/30 border border-white/5"
+                        >
+                          <div className="flex items-center gap-3">
+                            {(() => { const Icon = DICE_ICONS[dice.name] || Dices; return <Icon className="w-5 h-5 text-muted-foreground" />; })()}
+                            <span className="text-sm font-bold text-foreground">{dice.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={() => adjustDie(dice.name, -1)}
+                              disabled={count === 0}
+                              data-testid={`button-dice-minus-${dice.name}`}
+                            >
+                              <span className="text-lg font-bold">−</span>
+                            </Button>
+                            <span className="w-6 text-center font-bold text-foreground text-sm" data-testid={`text-dice-count-${dice.name}`}>
+                              {count}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={() => adjustDie(dice.name, 1)}
+                              disabled={count >= 20}
+                              data-testid={`button-dice-plus-${dice.name}`}
+                            >
+                              <span className="text-lg font-bold">+</span>
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <Button
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display tracking-wider"
+                      onClick={handleRoll}
+                      disabled={totalSelected === 0 || isRolling}
+                      data-testid="button-dice-roll"
+                    >
+                      {isRolling ? "Rolling..." : `Roll ${totalSelected > 0 ? `(${totalSelected} dice)` : ""}`}
+                    </Button>
+                  </section>
+                </div>
               </div>
 
               <AnimatePresence>
@@ -229,43 +458,11 @@ export function DiceRoller() {
                     className="border-t border-white/10 overflow-hidden"
                   >
                     <div className="p-3 space-y-2">
-                      {results.map((r, i) => (
-                        <div key={i} className="text-sm">
-                          <span className="text-muted-foreground font-medium">{r.rolls.length}{r.die}:</span>{" "}
-                          <span className="text-foreground">
-                            {r.rolls.map((v, j) => (
-                              <span key={j}>
-                                <span className={
-                                  v === r.sides ? "text-emerald-400 font-bold" :
-                                  v === 1 ? "text-destructive font-bold" : ""
-                                }>{v}</span>
-                                {j < r.rolls.length - 1 ? " + " : ""}
-                              </span>
-                            ))}
-                            {r.rolls.length > 1 && <span className="text-muted-foreground"> = {r.subtotal}</span>}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="pt-2 border-t border-white/10 text-center">
-                        <span className="text-2xl font-display font-bold text-primary" data-testid="text-dice-total">
-                          {grandTotal}
-                        </span>
-                      </div>
+                      <RollResultLines results={results} total={grandTotal} totalTestId="text-dice-total" />
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
-
-              <div className="p-3 border-t border-white/10">
-                <Button
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display tracking-wider"
-                  onClick={handleRoll}
-                  disabled={totalSelected === 0 || isRolling}
-                  data-testid="button-dice-roll"
-                >
-                  {isRolling ? "Rolling..." : `Roll ${totalSelected > 0 ? `(${totalSelected} dice)` : ""}`}
-                </Button>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -277,7 +474,12 @@ export function DiceRoller() {
               ? "bg-muted text-muted-foreground hover:bg-muted/80"
               : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/30"
           }`}
-          onClick={() => { setIsOpen(!isOpen); if (isOpen) { setResults(null); } }}
+          onClick={() => {
+            const nextOpen = !isOpen;
+            setIsOpen(nextOpen);
+            onOpenChange?.(nextOpen);
+            if (isOpen) setResults(null);
+          }}
           data-testid="button-dice-toggle"
         >
           {isOpen ? <X className="w-6 h-6" /> : <Dices className="w-6 h-6" />}

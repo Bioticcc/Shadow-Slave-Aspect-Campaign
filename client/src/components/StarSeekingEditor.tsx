@@ -16,7 +16,7 @@ const ABILITIES: Array<{ id: keyof CharacterStats; label: string }> = [
 
 const nonNegative = (value: string) => Math.max(0, Number.parseInt(value, 10) || 0);
 
-export function StarSeekingEditor({ trait, onChange }: { trait: Trait; onChange: (trait: Trait) => void }) {
+export function StarSeekingEditor({ trait, onChange, accentColor = "#b45353" }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string }) {
   const starSeeking = trait.starSeeking;
   if (!starSeeking) return null;
   const primaryLimb = starSeeking.limbs.find((limb) => limb.id === "arm") || starSeeking.limbs[0];
@@ -43,7 +43,10 @@ export function StarSeekingEditor({ trait, onChange }: { trait: Trait; onChange:
           <span className="min-w-0 flex-1"><span className="block font-medium text-amber-200">{trait.name}</span><span className="block truncate text-xs text-muted-foreground">{activeForm?.name || "Arm"} form · Click to edit</span></span>
         </button>
       </DialogTrigger>
-      <DialogContent className="glass-panel border-amber-300/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,46rem)] overflow-y-auto shadow-[0_0_50px_rgba(251,191,36,0.12)]">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-amber-300/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,46rem)] overflow-y-auto"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader><DialogTitle className="font-display text-2xl text-amber-200 text-glow">Edit {trait.name}</DialogTitle></DialogHeader>
         <div className="space-y-4 pt-3">
           <Input value={trait.name} onChange={(event) => onChange({ ...trait, name: event.target.value })} placeholder="Name" className="border-amber-300/20 bg-black/50" />

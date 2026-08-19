@@ -36,9 +36,10 @@ interface TraitEditorProps {
   onChange: (traits: Trait[]) => void;
   addButtonPlacement?: "header" | "bottom";
   accent?: "primary" | "emerald";
+  accentColor?: string;
 }
 
-export function TraitEditor({ title, traits, onChange, addButtonPlacement = "header", accent = "primary" }: TraitEditorProps) {
+export function TraitEditor({ title, traits, onChange, addButtonPlacement = "header", accent = "primary", accentColor }: TraitEditorProps) {
   const [newTrait, setNewTrait] = useState<Trait>({ name: "", description: "", effect: "" });
   const [isAdding, setIsAdding] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -72,7 +73,10 @@ export function TraitEditor({ title, traits, onChange, addButtonPlacement = "hea
   };
 
   return (
-    <div className="space-y-4 bg-black/20 p-4 rounded-xl border border-white/5">
+    <div
+      className={cn("space-y-4 bg-black/20 p-4 rounded-xl border border-white/5", accentColor && "character-custom-scope")}
+      style={accentColor ? { "--character-accent": accentColor } as React.CSSProperties : undefined}
+    >
       <div className="flex items-center justify-between">
         <h4 className={cn("text-lg font-display", accent === "emerald" ? "text-emerald-200" : "text-primary")}>{title}</h4>
         {addButtonPlacement === "header" && <Button
@@ -88,13 +92,13 @@ export function TraitEditor({ title, traits, onChange, addButtonPlacement = "hea
       <div className="space-y-2">
         {traits.map((trait, idx) => (
           trait.starSeeking ? (
-            <StarSeekingEditor key={idx} trait={trait} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <StarSeekingEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
           ) : trait.reforging ? (
-            <ReforgingEditor key={idx} trait={trait} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <ReforgingEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
           ) : trait.rememberedBy ? (
-            <RememberedByEditor key={idx} trait={trait} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <RememberedByEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
           ) : trait.subAttributes ? (
-            <ExpandedTraitEditor key={idx} trait={trait} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <ExpandedTraitEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
           ) : (
           <div key={idx} className="bg-secondary/50 rounded-lg border border-white/5">
             <div

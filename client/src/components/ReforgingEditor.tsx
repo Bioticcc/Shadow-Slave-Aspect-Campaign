@@ -14,7 +14,7 @@ function optionalPositiveNumber(value: string): number | null {
   return Number.isNaN(parsed) ? null : Math.max(0, parsed);
 }
 
-export function ReforgingEditor({ trait, onChange }: { trait: Trait; onChange: (trait: Trait) => void }) {
+export function ReforgingEditor({ trait, onChange, accentColor = "#b45353" }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string }) {
   const tracker = trait.reforging;
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<ReforgingMonster>(blankMonster());
@@ -38,7 +38,10 @@ export function ReforgingEditor({ trait, onChange }: { trait: Trait; onChange: (
           </span>
         </button>
       </DialogTrigger>
-      <DialogContent className="glass-panel border-red-500/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto shadow-[0_0_45px_rgba(239,68,68,0.12)]">
+      <DialogContent
+        className="character-custom-scope character-accent-glow glass-panel border-red-500/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto"
+        style={{ "--character-accent": accentColor } as React.CSSProperties}
+      >
         <DialogHeader><DialogTitle className="font-display text-2xl text-red-300 text-glow">Edit {trait.name}</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-3">
           <Input value={trait.name} onChange={(event) => onChange({ ...trait, name: event.target.value })} placeholder="Name" className="bg-black/50 border-red-500/20" />

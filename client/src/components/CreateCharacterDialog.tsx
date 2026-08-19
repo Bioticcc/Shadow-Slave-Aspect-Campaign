@@ -12,12 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 
+const DEFAULT_CHARACTER_ACCENT_COLOR = "#b45353";
+
 export function CreateCharacterDialog() {
   const { currentUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [trueName, setTrueName] = useState("");
   const [icon, setIcon] = useState<string | null>(null);
+  const [accentColor, setAccentColor] = useState(DEFAULT_CHARACTER_ACCENT_COLOR);
   
   const createChar = useCreateCharacter();
 
@@ -43,6 +46,7 @@ export function CreateCharacterDialog() {
       name,
       trueName,
       icon,
+      accentColor,
       rank: "Dreamer",
       soulCore: "Dormant",
       currentHealth: 8,
@@ -63,6 +67,8 @@ export function CreateCharacterDialog() {
         setOpen(false);
         setName("");
         setTrueName("");
+        setIcon(null);
+        setAccentColor(DEFAULT_CHARACTER_ACCENT_COLOR);
       }
     });
   };
@@ -114,6 +120,24 @@ export function CreateCharacterDialog() {
                 onChange={handleIconUpload}
                 className="bg-black/50 border-white/10 focus-visible:ring-primary text-xs"
               />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Character Accent</label>
+            <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/30 p-3">
+              <input
+                type="color"
+                value={accentColor}
+                onChange={(event) => setAccentColor(event.target.value)}
+                className="h-9 w-12 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
+                aria-label="Character accent color"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-foreground">Personal highlight color</p>
+                <p className="text-[10px] text-muted-foreground">Used for fragments, custom attributes, and weapon memories.</p>
+              </div>
+              <span className="font-mono text-xs uppercase text-muted-foreground">{accentColor}</span>
             </div>
           </div>
           

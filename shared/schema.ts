@@ -223,6 +223,7 @@ export const characters = pgTable("characters", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   icon: text("icon"),
+  accentColor: text("accent_color").notNull().default("#b45353"),
   currentHealth: integer("current_health").notNull().default(8),
   maxHealth: integer("max_health").notNull().default(8),
   armorClass: integer("armor_class").notNull().default(8),
@@ -484,7 +485,15 @@ export const WS_EVENTS = {
 
 export type DiceRollPayload = {
   user: string;
-  results: { die: string; sides: number; rolls: number[]; subtotal: number }[];
+  results: {
+    die: string;
+    sides: number;
+    rolls: number[];
+    subtotal: number;
+    label?: string;
+    modifier?: number;
+    character?: string;
+  }[];
   total: number;
 };
 

@@ -18,9 +18,10 @@ interface TraitPopupProps {
   children: React.ReactNode;
   contentClassName?: string;
   bodyClassName?: string;
+  accentColor?: string;
 }
 
-export function TraitPopup({ trait, children, contentClassName, bodyClassName }: TraitPopupProps) {
+export function TraitPopup({ trait, children, contentClassName, bodyClassName, accentColor }: TraitPopupProps) {
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -29,8 +30,10 @@ export function TraitPopup({ trait, children, contentClassName, bodyClassName }:
       <DialogContent
         className={cn(
           "glass-panel border-primary/20 w-[min(92vw,63rem)] max-w-[63rem]",
+          accentColor && "character-custom-scope character-accent-border character-accent-glow",
           contentClassName,
         )}
+        style={accentColor ? { "--character-accent": accentColor } as React.CSSProperties : undefined}
       >
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-primary text-glow">

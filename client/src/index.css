@@ -92,6 +92,113 @@
     @apply bg-gradient-to-r from-primary to-amber-200 bg-clip-text text-transparent;
   }
 
+  .character-accent-scope {
+    --character-accent: #b45353;
+  }
+
+  .character-accent-text {
+    color: var(--character-accent);
+  }
+
+  .character-accent-muted {
+    color: color-mix(in srgb, var(--character-accent) 72%, transparent);
+  }
+
+  .character-accent-border {
+    border-color: color-mix(in srgb, var(--character-accent) 35%, transparent);
+  }
+
+  .character-accent-soft {
+    background-color: color-mix(in srgb, var(--character-accent) 10%, transparent);
+  }
+
+  .character-accent-panel {
+    border-color: color-mix(in srgb, var(--character-accent) 26%, transparent);
+    background:
+      radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--character-accent) 13%, transparent), transparent 62%),
+      linear-gradient(90deg, color-mix(in srgb, var(--character-accent) 9%, transparent), rgb(0 0 0 / 0.35), color-mix(in srgb, var(--character-accent) 6%, transparent));
+  }
+
+  .character-accent-glow {
+    box-shadow: 0 0 24px color-mix(in srgb, var(--character-accent) 13%, transparent);
+  }
+
+  .character-accent-button {
+    border-color: color-mix(in srgb, var(--character-accent) 32%, transparent);
+    background-color: rgb(0 0 0 / 0.3);
+    color: var(--character-accent);
+  }
+
+  .character-accent-button:hover {
+    background-color: color-mix(in srgb, var(--character-accent) 13%, transparent);
+    color: color-mix(in srgb, var(--character-accent) 82%, white);
+  }
+
+  .character-custom-scope :is(
+    [class*="text-amber-"], [class*="text-red-"], [class*="text-orange-"],
+    [class*="text-yellow-"], [class*="text-fuchsia-"], [class*="text-emerald-"],
+    [class*="text-primary"]
+  ) {
+    color: var(--character-accent) !important;
+  }
+
+  .character-custom-scope :is(
+    [class*="border-amber-"], [class*="border-red-"], [class*="border-orange-"],
+    [class*="border-yellow-"], [class*="border-fuchsia-"], [class*="border-emerald-"],
+    [class*="border-primary"]
+  ) {
+    border-color: color-mix(in srgb, var(--character-accent) 32%, transparent) !important;
+  }
+
+  .character-custom-scope :is(
+    [class*="bg-amber-"], [class*="bg-red-"], [class*="bg-orange-"],
+    [class*="bg-yellow-"], [class*="bg-fuchsia-"], [class*="bg-emerald-"],
+    [class*="bg-primary"]
+  ) {
+    background-color: color-mix(in srgb, var(--character-accent) 11%, transparent) !important;
+  }
+
+  .character-custom-scope :is(
+    [class*="fill-amber-"], [class*="fill-red-"], [class*="fill-orange-"],
+    [class*="fill-yellow-"], [class*="fill-fuchsia-"], [class*="fill-emerald-"]
+  ) {
+    fill: color-mix(in srgb, var(--character-accent) 28%, transparent) !important;
+  }
+
+  .character-custom-scope :is(
+    [class*="from-amber-"], [class*="from-red-"], [class*="from-orange-"],
+    [class*="from-yellow-"], [class*="from-fuchsia-"], [class*="from-emerald-"],
+    [class*="from-primary"]
+  ) {
+    --tw-gradient-from: color-mix(in srgb, var(--character-accent) 16%, transparent) var(--tw-gradient-from-position) !important;
+    --tw-gradient-to: color-mix(in srgb, var(--character-accent) 0%, transparent) var(--tw-gradient-to-position) !important;
+  }
+
+  .character-custom-scope :is(
+    [class*="via-amber-"], [class*="via-red-"], [class*="via-orange-"],
+    [class*="via-yellow-"], [class*="via-fuchsia-"], [class*="via-emerald-"],
+    [class*="via-primary"]
+  ) {
+    --tw-gradient-to: color-mix(in srgb, var(--character-accent) 0%, transparent) var(--tw-gradient-to-position) !important;
+    --tw-gradient-stops: var(--tw-gradient-from), color-mix(in srgb, var(--character-accent) 7%, transparent) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+  }
+
+  .character-custom-scope :is(
+    [class*="to-amber-"], [class*="to-red-"], [class*="to-orange-"],
+    [class*="to-yellow-"], [class*="to-fuchsia-"], [class*="to-emerald-"],
+    [class*="to-primary"]
+  ) {
+    --tw-gradient-to: color-mix(in srgb, var(--character-accent) 5%, transparent) var(--tw-gradient-to-position) !important;
+  }
+
+  .character-custom-scope .text-glow {
+    text-shadow: 0 0 10px color-mix(in srgb, var(--character-accent) 38%, transparent);
+  }
+
+  .character-custom-scope [class*="shadow-[0_0"] {
+    box-shadow: 0 0 24px color-mix(in srgb, var(--character-accent) 14%, transparent) !important;
+  }
+
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-4px); }
