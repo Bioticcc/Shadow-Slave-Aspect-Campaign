@@ -6,3 +6,12 @@ vite.config.ts.*
 *.tar.gz
 .env
 db-dumps/
+
+# Local editor/agent state
+.local/
+.agents/
+.codex/
+
+# Windows download metadata that can appear as files outside NTFS
+*:Zone.Identifier
+*:SmartScreen
