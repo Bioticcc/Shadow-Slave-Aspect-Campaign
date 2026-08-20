@@ -49,7 +49,7 @@ export function normalizeExpandedAttributes(character: Character): Trait[] {
       if (trait.name.trim().toLowerCase() !== "star seeking") return trait;
       const loreDescription = trait.description.split(/\n\s*abilitys?/i)[0].trim();
       const attackBase = normalizeStats(character.stats).intelligence
-        + getProficiencyBonus(character.totalSoulFragments ?? 0);
+        + getProficiencyBonus(character.soulFragments ?? 0);
       const legacy = trait.starSeeking as unknown as Record<string, any> | undefined;
       const makeArm = (source: Record<string, any> = {}): StarSeekingLimb => ({
         id: String(source.id || "arm"),

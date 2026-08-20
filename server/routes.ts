@@ -6,6 +6,7 @@ import { api } from "@shared/routes";
 import {
   normalizeEchoes,
   normalizeMemory,
+  getEssenceMaxForProgress,
   getProficiencyBonus,
   WS_EVENTS,
   serializeEchoes,
@@ -139,6 +140,17 @@ export async function registerRoutes(
       id SERIAL PRIMARY KEY,
       memory JSON NOT NULL
     )
+  `);
+  await pool.query(`
+    ALTER TABLE characters
+    ADD COLUMN IF NOT EXISTS stat_progression JSON NOT NULL
+    DEFAULT '{}'
+  `);
+  await pool.query(`ALTER TABLE characters ALTER COLUMN stat_progression SET DEFAULT '{}'`);
+  await pool.query(`
+    ALTER TABLE characters
+    ADD COLUMN IF NOT EXISTS sheet_counters JSON NOT NULL
+    DEFAULT '[]'
   `);
 
   // Auth routes
@@ -428,8 +440,8 @@ export async function registerRoutes(
       return;
     }
 
-    const requesterBonus = getProficiencyBonus(requesterCharacter.totalSoulFragments ?? 0);
-    const recipientBonus = getProficiencyBonus(recipientCharacter.totalSoulFragments ?? 0);
+    const requesterBonus = getProficiencyBonus(requesterCharacter.soulFragments ?? 0);
+    const recipientBonus = getProficiencyBonus(recipientCharacter.soulFragments ?? 0);
     const requesterMemories = (requesterCharacter.memories || []).map((memory) => normalizeMemory(memory, requesterBonus));
     const recipientMemories = (recipientCharacter.memories || []).map((memory) => normalizeMemory(memory, recipientBonus));
     const requesterIndexes = sanitizeMemoryIndexes(requesterOffer.memoryIndexes, requesterMemories.length);
@@ -489,7 +501,7 @@ export async function registerRoutes(
     const entries: MemoryBankEntry[] = [];
     const characters = await storage.getCharacters();
     for (const character of characters) {
-      const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+      const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
       const characterMemories = (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
       characterMemories.forEach((memory, memoryIndex) => {
         entries.push({
@@ -738,7 +750,7 @@ export async function registerRoutes(
             return;
           }
 
-          const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+          const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
           const memories = (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
           session.offers[authUser.username] = {
             characterId: parsed.data.characterId,
@@ -904,7 +916,7 @@ export async function registerRoutes(
 
       const memoryDeltas: UndoMemoryDelta[] = [];
       const nextMemories = (character.memories || []).map((rawMemory, memoryIndex) => {
-        const memory = normalizeMemory(rawMemory, getProficiencyBonus(character.totalSoulFragments ?? 0));
+        const memory = normalizeMemory(rawMemory, getProficiencyBonus(character.soulFragments ?? 0));
         if (memory.isSummoned) return memory;
 
         const healRate = Math.max(0, memory.healRate ?? 1);
@@ -1040,7 +1052,7 @@ export async function registerRoutes(
         }
 
         if (characterDelta.memoryDeltas.length > 0) {
-          const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+          const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
           const memories = (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
           let memoriesChanged = false;
 
@@ -1137,6 +1149,34 @@ export async function registerRoutes(
     return res.status(201).json(created);
   });
 
+  // Character owners may deposit memories, but only the DM can browse or
+  // manage the Memory Bank through the endpoints above and below.
+  app.post("/api/memory-bank/deposit/:characterId", async (req, res) => {
+    const user = (req as SessionRequest).authUser;
+    if (!user) return res.status(401).json({ message: "Authentication required" });
+
+    const characterId = Number(req.params.characterId);
+    if (!Number.isFinite(characterId)) {
+      return res.status(400).json({ message: "Invalid character id" });
+    }
+
+    const character = await storage.getCharacter(characterId);
+    if (!character) return res.status(404).json({ message: "Character not found" });
+    if (!canManageCharacter(user, character.owner || "DM")) {
+      return res.status(403).json({ message: "You do not have permission to transfer memories from this character" });
+    }
+
+    const parsed = memoryBankMemorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid memory payload" });
+    }
+
+    const memory = normalizeMemory(parsed.data, getProficiencyBonus(character.soulFragments ?? 0));
+    memory.isSummoned = false;
+    const created = await storage.createMemoryBankMemory(memory);
+    return res.status(201).json(created);
+  });
+
   app.put("/api/memory-bank/character/:characterId/:memoryIndex", async (req, res) => {
     const user = (req as SessionRequest).authUser;
     if (!user) return res.status(401).json({ message: "Authentication required" });
@@ -1156,7 +1196,7 @@ export async function registerRoutes(
     const character = await storage.getCharacter(characterId);
     if (!character) return res.status(404).json({ message: "Character not found" });
 
-    const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+    const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
     const memories = (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
     if (!memories[memoryIndex]) {
       return res.status(404).json({ message: "Memory not found on character" });
@@ -1182,7 +1222,7 @@ export async function registerRoutes(
     const character = await storage.getCharacter(characterId);
     if (!character) return res.status(404).json({ message: "Character not found" });
 
-    const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+    const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
     const memories = (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
     const memory = memories[memoryIndex];
     if (!memory) {
@@ -1245,7 +1285,7 @@ export async function registerRoutes(
 
     const memory = normalizeMemory(bankMemory.memory);
     memory.isSummoned = false;
-    const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+    const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
     const characterMemories = (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
     characterMemories.push(memory);
 
@@ -1321,6 +1361,12 @@ export async function registerRoutes(
       if (!user.isDM && "owner" in input) {
         delete (input as Partial<typeof input>).owner;
       }
+
+      const nextSoulClass = input.soulClass ?? existing.soulClass ?? "Beast";
+      const nextSoulFragments = input.soulFragments ?? existing.soulFragments ?? 0;
+      const derivedMaxEssence = getEssenceMaxForProgress(nextSoulClass, nextSoulFragments);
+      input.maxEssence = derivedMaxEssence;
+      input.currentEssence = Math.min(input.currentEssence ?? existing.currentEssence ?? 0, derivedMaxEssence);
 
       const character = await storage.updateCharacter(id, input);
       broadcastUpdate(character);

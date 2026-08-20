@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dices, X, RotateCcw, Triangle, Pentagon, Hexagon, Octagon, Diamond, Circle, Box, Gauge, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
@@ -7,9 +8,11 @@ import { useUpdateCharacter } from "@/hooks/use-characters";
 import { sendWsMessage, onDiceRoll } from "@/hooks/use-websocket";
 import {
   getProficiencyBonus,
+  getStatTrainingBonus,
   normalizeEchoes,
   normalizeMemory,
   normalizeStats,
+  normalizeStatProgression,
   serializeEchoes,
   WS_EVENTS,
   type Character,
@@ -47,7 +50,6 @@ const SAVES: { label: string; short: string; stat: keyof CharacterStats }[] = [
 ];
 
 const CHECKS: { label: string; short: string; stat: keyof CharacterStats }[] = [
-  { label: "Initiative", short: "INT", stat: "intelligence" },
   { label: "Athletics", short: "STR", stat: "strength" },
   { label: "Deception", short: "CHA", stat: "charisma" },
   { label: "Intimidation", short: "CHA", stat: "charisma" },
@@ -131,6 +133,27 @@ export function DiceRoller({
 
   const totalSelected = Object.values(selected).reduce((a, b) => a + b, 0);
   const characterStats = normalizeStats(activeCharacter?.stats);
+  const activeProficiencyBonus = getProficiencyBonus(activeCharacter?.soulFragments ?? 0);
+  const activeStatProgression = normalizeStatProgression(activeCharacter?.statProgression, activeCharacter?.soulFragments ?? 0, activeCharacter?.soulClass || "Beast");
+  const getRollModifier = (stat: keyof CharacterStats, manuallyProficient = false) => {
+    const trainingBonus = getStatTrainingBonus(activeStatProgression, stat, activeProficiencyBonus);
+    return characterStats[stat] + (trainingBonus || (manuallyProficient ? activeProficiencyBonus : 0));
+  };
+
+  const isCheckProficient = (label: string) => activeStatProgression.checkProficiencies?.[label] === true;
+  const isSaveProficient = (stat: keyof CharacterStats) => activeStatProgression.saveProficiencies?.[stat] === true;
+
+  const handleProficiencyToggle = (kind: "check" | "save", key: string, checked: boolean) => {
+    if (!activeCharacter || updateCharacter.isPending) return;
+    const field = kind === "check" ? "checkProficiencies" : "saveProficiencies";
+    const existing = { ...(activeStatProgression[field] || {}) } as Record<string, boolean>;
+    if (checked) existing[key] = true;
+    else delete existing[key];
+    updateCharacter.mutate({
+      id: activeCharacter.id,
+      updates: { statProgression: { ...activeStatProgression, [field]: existing } },
+    });
+  };
 
   useEffect(() => {
     return onDiceRoll((payload: DiceRollPayload) => {
@@ -196,7 +219,10 @@ export function DiceRoller({
       const actualStat = label === "Perception" && activeCharacter.name.trim().toLowerCase() === "wilovan"
         ? "dexterity"
         : stat;
-      const modifier = characterStats[actualStat];
+      const manualProficiency = label.endsWith(" Save")
+        ? isSaveProficient(actualStat)
+        : isCheckProficient(label);
+      const modifier = getRollModifier(actualStat, manualProficiency);
       const naturalRoll = Math.floor(Math.random() * 20) + 1;
       const rollResults: RollResult[] = [{
         die: "D20",
@@ -224,7 +250,7 @@ export function DiceRoller({
   const handleLongRest = async () => {
     if (!activeCharacter || updateCharacter.isPending) return;
 
-    const proficiencyBonus = getProficiencyBonus(activeCharacter.totalSoulFragments ?? 0);
+    const proficiencyBonus = getProficiencyBonus(activeCharacter.soulFragments ?? 0);
     const memories = (activeCharacter.memories || []).map((rawMemory) => {
       const memory = normalizeMemory(rawMemory, proficiencyBonus);
       if (memory.isSummoned) return memory;
@@ -356,41 +382,51 @@ export function DiceRoller({
                   <section className="relative min-h-0 min-w-0">
                     <div className="absolute inset-0 space-y-1.5 overflow-y-auto p-3 pr-2">
                       <h4 className="px-1 pb-1 text-xs font-bold uppercase tracking-widest text-primary">Saves</h4>
-                      {SAVES.map((save) => (
-                        <Button
-                          key={save.stat}
-                          variant="ghost"
-                          className="w-full h-10 justify-between px-3 bg-black/30 border border-white/5 hover:bg-white/10"
-                          disabled={!activeCharacter || isRolling}
-                          onClick={() => handleModifierRoll(`${save.label} Save`, save.stat)}
-                          data-testid={`button-save-${save.stat}`}
-                        >
-                          <span className="text-sm">{save.label}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {save.short} {formatModifier(characterStats[save.stat])}
-                          </span>
-                        </Button>
-                      ))}
+                      {SAVES.map((save) => {
+                        const statTraining = activeStatProgression.training[save.stat];
+                        const manuallyProficient = isSaveProficient(save.stat);
+                        const trained = !!statTraining;
+                        return (
+                          <div key={save.stat} className="flex h-10 items-center gap-2 rounded-md border border-white/5 bg-black/30 px-2 hover:bg-white/10">
+                            <Checkbox
+                              checked={trained || manuallyProficient}
+                              disabled={!activeCharacter || trained || updateCharacter.isPending}
+                              onCheckedChange={(checked) => handleProficiencyToggle("save", save.stat, checked === true)}
+                              className="h-3.5 w-3.5"
+                              aria-label={`${trained || manuallyProficient ? "Remove" : "Add"} ${save.label} save proficiency`}
+                              title={trained ? `Granted by ${statTraining}` : "Proficient"}
+                            />
+                            <button type="button" className="flex min-w-0 flex-1 items-center justify-between self-stretch" disabled={!activeCharacter || isRolling} onClick={() => handleModifierRoll(`${save.label} Save`, save.stat)} data-testid={`button-save-${save.stat}`}>
+                              <span className="text-sm">{save.label}</span>
+                              <span className="text-xs text-muted-foreground">{save.short} {formatModifier(getRollModifier(save.stat, manuallyProficient))}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
                       <h4 className="px-1 pb-1 pt-4 text-xs font-bold uppercase tracking-widest text-primary">Checks</h4>
                       {CHECKS.map((check) => {
                         const stat = check.label === "Perception" && activeCharacter?.name.trim().toLowerCase() === "wilovan"
                           ? "dexterity"
                           : check.stat;
                         const short = stat === "dexterity" && check.label === "Perception" ? "DEX" : check.short;
+                        const statTraining = activeStatProgression.training[stat];
+                        const manuallyProficient = isCheckProficient(check.label);
+                        const trained = !!statTraining;
                         return (
-                          <Button
-                            key={check.label}
-                            variant="ghost"
-                            className="w-full h-10 justify-between px-3 bg-black/30 border border-white/5 hover:bg-white/10"
-                            disabled={!activeCharacter || isRolling}
-                            onClick={() => handleModifierRoll(check.label, check.stat)}
-                            data-testid={`button-check-${check.label.toLowerCase().replaceAll(" ", "-")}`}
-                          >
-                            <span className="text-sm">{check.label}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {short} {formatModifier(characterStats[stat])}
-                            </span>
-                          </Button>
+                          <div key={check.label} className="flex h-10 items-center gap-2 rounded-md border border-white/5 bg-black/30 px-2 hover:bg-white/10">
+                            <Checkbox
+                              checked={trained || manuallyProficient}
+                              disabled={!activeCharacter || trained || updateCharacter.isPending}
+                              onCheckedChange={(checked) => handleProficiencyToggle("check", check.label, checked === true)}
+                              className="h-3.5 w-3.5"
+                              aria-label={`${trained || manuallyProficient ? "Remove" : "Add"} ${check.label} proficiency`}
+                              title={trained ? `Granted by ${statTraining}` : "Proficient"}
+                            />
+                            <button type="button" className="flex min-w-0 flex-1 items-center justify-between self-stretch" disabled={!activeCharacter || isRolling} onClick={() => handleModifierRoll(check.label, check.stat)} data-testid={`button-check-${check.label.toLowerCase().replaceAll(" ", "-")}`}>
+                              <span className="text-sm">{check.label}</span>
+                              <span className="text-xs text-muted-foreground">{short} {formatModifier(getRollModifier(stat, manuallyProficient))}</span>
+                            </button>
+                          </div>
                         );
                       })}
                     </div>

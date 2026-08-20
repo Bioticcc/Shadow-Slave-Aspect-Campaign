@@ -31,6 +31,7 @@ export function StarSeekingPopup({
   stats,
   proficiencyBonus,
   accentColor = "#b45353",
+  accentSecondaryColor = accentColor,
 }: {
   trait: Trait;
   children: React.ReactNode;
@@ -39,6 +40,7 @@ export function StarSeekingPopup({
   stats: CharacterStats;
   proficiencyBonus: number;
   accentColor?: string;
+  accentSecondaryColor?: string;
 }) {
   const { currentUser } = useAuth();
   const [lastRoll, setLastRoll] = useState<RollResult | null>(null);
@@ -83,11 +85,11 @@ export function StarSeekingPopup({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         className="character-custom-scope character-accent-glow glass-panel border-amber-300/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,43rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={{ "--character-accent": accentColor, "--character-accent-secondary": accentSecondaryColor } as React.CSSProperties}
       >
         <DialogHeader className="pb-4">
           <DialogTitle className="flex items-center gap-2 font-display text-2xl text-amber-200 text-glow">
-            <Star className="h-5 w-5 fill-amber-300/30 text-amber-300" /> {trait.name}
+            <Star className="character-accent-text h-5 w-5 fill-amber-300/30" /> {trait.name}
           </DialogTitle>
           {trait.description && <p className="pt-2 text-sm italic text-muted-foreground whitespace-pre-wrap">{trait.description}</p>}
         </DialogHeader>

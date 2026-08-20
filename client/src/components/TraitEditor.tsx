@@ -12,7 +12,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ExpandedTraitEditor } from "./ExpandedTraitEditor";
 import { RememberedByEditor } from "./RememberedByEditor";
 import { ReforgingEditor } from "./ReforgingEditor";
@@ -37,12 +38,17 @@ interface TraitEditorProps {
   addButtonPlacement?: "header" | "bottom";
   accent?: "primary" | "emerald";
   accentColor?: string;
+  accentSecondaryColor?: string;
+  lockRememberedEffects?: boolean;
+  bare?: boolean;
+  addLabel?: string;
+  renderAccessory?: (index: number) => React.ReactNode;
+  onItemClickCapture?: (event: React.MouseEvent<HTMLDivElement>, index: number) => void;
 }
 
-export function TraitEditor({ title, traits, onChange, addButtonPlacement = "header", accent = "primary", accentColor }: TraitEditorProps) {
+export function TraitEditor({ title, traits, onChange, addButtonPlacement = "header", accent = "primary", accentColor, accentSecondaryColor, lockRememberedEffects = false, bare = false, addLabel = "Add", renderAccessory, onItemClickCapture }: TraitEditorProps) {
   const [newTrait, setNewTrait] = useState<Trait>({ name: "", description: "", effect: "" });
   const [isAdding, setIsAdding] = useState(false);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
 
   const handleAdd = () => {
@@ -56,8 +62,6 @@ export function TraitEditor({ title, traits, onChange, addButtonPlacement = "hea
     const updated = [...traits];
     updated.splice(index, 1);
     onChange(updated);
-    if (expandedIdx === index) setExpandedIdx(null);
-    if (expandedIdx !== null && expandedIdx > index) setExpandedIdx(expandedIdx - 1);
   };
 
   const confirmRemove = () => {
@@ -73,86 +77,71 @@ export function TraitEditor({ title, traits, onChange, addButtonPlacement = "hea
   };
 
   return (
-    <div
-      className={cn("space-y-4 bg-black/20 p-4 rounded-xl border border-white/5", accentColor && "character-custom-scope")}
-      style={accentColor ? { "--character-accent": accentColor } as React.CSSProperties : undefined}
-    >
+    <div className={cn("space-y-4", !bare && "bg-black/20 p-4 rounded-xl border border-white/5")}>
       <div className="flex items-center justify-between">
-        <h4 className={cn("text-lg font-display", accent === "emerald" ? "text-emerald-200" : "text-primary")}>{title}</h4>
+        <h4 className={cn("flex-1 border-b border-white/10 pb-2 text-lg font-display", bare ? "text-foreground" : accent === "emerald" ? "text-emerald-200" : "text-primary")}>{title}</h4>
         {addButtonPlacement === "header" && <Button
           variant="outline" 
           size="sm" 
           onClick={() => setIsAdding(!isAdding)}
-          className={cn(accent === "emerald" ? "border-emerald-300/30 text-emerald-200 hover:bg-emerald-400/10" : "border-primary/30 text-primary hover:bg-primary/10")}
+          className={cn("mb-2 h-7", accent === "emerald" ? "border-emerald-300/30 text-emerald-200 hover:bg-emerald-400/10" : "border-primary/30 text-primary hover:bg-primary/10")}
         >
-          {isAdding ? "Cancel" : <><Plus className="w-4 h-4 mr-2" /> Add</>}
+          {isAdding ? "Cancel" : <><Plus className="mr-1 h-3 w-3" /> {addLabel}</>}
         </Button>}
       </div>
 
       <div className="space-y-2">
         {traits.map((trait, idx) => (
-          trait.starSeeking ? (
-            <StarSeekingEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+          <div key={idx} className="space-y-1" onClickCapture={(event) => onItemClickCapture?.(event, idx)}>
+          {trait.starSeeking ? (
+            <div key={idx} className="relative"><StarSeekingEditor trait={trait} accentColor={accentColor} accentSecondaryColor={accentSecondaryColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} /><Button type="button" variant="ghost" size="icon" onClick={() => setPendingDeleteIndex(idx)} className="absolute right-2 top-2 h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button></div>
           ) : trait.reforging ? (
-            <ReforgingEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <div key={idx} className="relative"><ReforgingEditor trait={trait} accentColor={accentColor} accentSecondaryColor={accentSecondaryColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} /><Button type="button" variant="ghost" size="icon" onClick={() => setPendingDeleteIndex(idx)} className="absolute right-2 top-2 h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button></div>
           ) : trait.rememberedBy ? (
-            <RememberedByEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <div key={idx} className="relative"><RememberedByEditor trait={trait} accentColor={accentColor} accentSecondaryColor={accentSecondaryColor} effectsLocked={lockRememberedEffects} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} /><Button type="button" variant="ghost" size="icon" onClick={() => setPendingDeleteIndex(idx)} className="absolute right-2 top-2 h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button></div>
           ) : trait.subAttributes ? (
-            <ExpandedTraitEditor key={idx} trait={trait} accentColor={accentColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} />
+            <div key={idx} className="relative"><ExpandedTraitEditor trait={trait} accentColor={accentColor} accentSecondaryColor={accentSecondaryColor} onChange={(nextTrait) => handleUpdate(idx, nextTrait)} /><Button type="button" variant="ghost" size="icon" onClick={() => setPendingDeleteIndex(idx)} className="absolute right-2 top-2 h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button></div>
           ) : (
-          <div key={idx} className="bg-secondary/50 rounded-lg border border-white/5">
-            <div
-              className="flex items-start justify-between gap-4 p-3 cursor-pointer"
-              onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground">{trait.name}</p>
-                <p className="text-sm text-muted-foreground truncate">{trait.effect}</p>
-              </div>
-              <div className="flex items-center gap-1">
-                {expandedIdx === idx ? (
-                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPendingDeleteIndex(idx);
-                  }}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7"
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
+          <Dialog key={idx}>
+            <div className="relative rounded-lg border border-white/5 bg-secondary/30 transition-all hover:border-white/10 hover:bg-secondary/50">
+              <DialogTrigger asChild>
+                <button type="button" className="w-full cursor-pointer p-3 pr-11 text-left">
+                  <p className="font-medium text-foreground">{trait.name}</p>
+                  <p className="truncate text-sm text-muted-foreground">{trait.effect}</p>
+                </button>
+              </DialogTrigger>
+              <Button variant="ghost" size="icon" onClick={() => setPendingDeleteIndex(idx)} className="absolute right-2 top-2 h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
             </div>
-
-            {expandedIdx === idx && (
-              <div className="px-3 pb-3 space-y-3 border-t border-white/5 pt-3">
+            <DialogContent className="glass-panel grid h-[min(88vh,42rem)] w-[min(92vw,56rem)] max-w-[56rem] grid-rows-[auto_minmax(0,1fr)] overflow-hidden gap-0 p-0">
+              <DialogHeader className="border-b border-white/10 px-6 pb-4 pt-6">
+                <DialogTitle className="font-display text-2xl text-primary">Edit {trait.name || "Attribute"}</DialogTitle>
+                <p className="text-xs text-muted-foreground">Close this window when finished, then use Save Changes.</p>
+              </DialogHeader>
+              <div className="min-h-0 space-y-4 overflow-y-auto p-6">
                 <Input
                   placeholder="Name"
                   value={trait.name}
                   onChange={e => handleUpdate(idx, { name: e.target.value })}
                   className="bg-black/50"
                 />
-                <Input
+                <Textarea
                   placeholder="Effect"
                   value={trait.effect}
                   onChange={e => handleUpdate(idx, { effect: e.target.value })}
-                  className="bg-black/50"
+                  className="min-h-[180px] resize-y bg-black/50"
                 />
                 <Textarea
                   placeholder="Description"
                   value={trait.description}
                   onChange={e => handleUpdate(idx, { description: e.target.value })}
-                  className="bg-black/50 min-h-[80px]"
+                  className="min-h-[180px] resize-y bg-black/50"
                 />
               </div>
-            )}
+            </DialogContent>
+          </Dialog>
+          )}
+          {renderAccessory?.(idx)}
           </div>
-          )
         ))}
         {traits.length === 0 && !isAdding && (
           <p className="text-sm text-muted-foreground italic text-center py-2">None</p>

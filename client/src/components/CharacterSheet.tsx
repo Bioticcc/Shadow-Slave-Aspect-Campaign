@@ -5,6 +5,8 @@ import {
   type CharacterStats,
   type Echo,
   type Memory,
+  type SheetCounter,
+  type SheetCounterTarget,
   CLASS_TIERS,
   MEMORY_CORES,
   MEMORY_TIERS,
@@ -14,12 +16,22 @@ import {
   getArmorDexterityBonus,
   getClassTierIndex,
   getMaxFragmentsForClass,
+  getNextStatAllocation,
+  getPendingStatAllocationCount,
   getProficiencyBonus,
+  getWeaponDamageModifier,
+  getWeaponHitModifier,
+  normalizeStatProgression,
+  rollbackStatAllocations,
+  STAT_KEYS,
+  CLASS_PROGRESSION_DESCRIPTIONS,
   normalizeEchoes,
   normalizeMemory,
+  normalizeSheetCounters,
   normalizeStats,
   serializeEchoes,
   type DiceRollPayload,
+  type StatKey,
 } from "@shared/schema";
 import { useUpdateCharacter, useDeleteCharacter } from "@/hooks/use-characters";
 import { useAuth } from "@/lib/auth";
@@ -35,7 +47,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit2, Save, Minus, Plus, Gem, Star, Shield, Dna, Upload, Trash2, Swords, Sparkles, Wrench, Zap, Crosshair, Flame, Fingerprint, Anvil } from "lucide-react";
+import { Edit2, Save, Minus, Plus, Star, Shield, Dna, Upload, Trash2, Swords, Sparkles, Wrench, Zap, Crosshair, Flame, Fingerprint, Anvil, Hash, X } from "lucide-react";
 import { TraitPopup } from "./TraitPopup";
 import { TraitEditor } from "./TraitEditor";
 import { ExpandedTraitPopup } from "./ExpandedTraitPopup";
@@ -44,6 +56,7 @@ import { ReforgingPopup } from "./ReforgingPopup";
 import { StarSeekingPopup } from "./StarSeekingPopup";
 import { getPrimaryStarSeekingLimb, getStarSeekingArmorBonus, normalizeExpandedAttributes } from "@/lib/expanded-attributes";
 import { MemoryEditor } from "./MemoryEditor";
+import { MemoryPopup } from "./MemoryPopup";
 import { EchoPopup } from "./EchoPopup";
 import {
   AlertDialog,
@@ -59,6 +72,18 @@ import {
 
 const SOUL_CORES = ["Dormant", "Awakened", "Ascended", "Transcendent", "Supreme", "Sacred", "Divine"];
 const DEFAULT_CHARACTER_ACCENT_COLOR = "#b45353";
+const DEFAULT_ECHO_ACCENT_COLOR = "hsl(var(--primary))";
+const CUSTOM_ATTRIBUTE_PALETTES: Array<{ names: string[]; primary: string; secondary: string }> = [
+  { names: ["steven"], primary: "#ef4444", secondary: "#050505" },
+  { names: ["gordon", "gordan"], primary: "#f97316", secondary: "#e2e8f0" },
+  { names: ["yuri"], primary: "#fbbf24", secondary: "#9333ea" },
+  { names: ["wilovan", "wilvoan"], primary: "#7dd3fc", secondary: "#86efac" },
+];
+
+function getCustomAttributePalette(name: string) {
+  const normalizedName = name.trim().toLowerCase();
+  return CUSTOM_ATTRIBUTE_PALETTES.find((palette) => palette.names.some((candidate) => normalizedName.includes(candidate)));
+}
 const RANK_BY_SOUL_CORE: Record<string, string> = {
   Dormant: "Dreamer",
   Awakened: "Awakened",
@@ -123,11 +148,38 @@ const MEMORY_TYPE_ICONS: Record<string, typeof Shield> = {
 };
 
 const MEMORY_TYPE_COLORS: Record<string, string> = {
-  armor: "text-primary border-primary/30 bg-primary/10",
-  weapon: "character-accent-text character-accent-border character-accent-soft character-accent-glow",
-  tool: "text-primary border-primary/30 bg-primary/10",
-  charm: "text-primary border-primary/30 bg-primary/10",
+  armor: "text-primary border-blue-700/50 bg-blue-950/35",
+  weapon: "text-primary border-red-400/60 bg-red-500/10",
+  tool: "text-primary border-white/15 bg-primary/10",
+  charm: "text-primary border-white/15 bg-primary/10",
 };
+
+function CounterControls({ counter, editing, disabled, onChange, onRemove }: {
+  counter: SheetCounter;
+  editing: boolean;
+  disabled?: boolean;
+  onChange: (delta: number) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="mt-2 flex items-center justify-end gap-1 rounded-md border border-primary/20 bg-black/35 px-2 py-1" onClick={(event) => event.stopPropagation()}>
+      <Hash className="h-3 w-3 text-primary/70" />
+      <span className="mr-auto text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Counter</span>
+      {editing ? (
+        <>
+          <span className="min-w-7 text-center font-display text-sm font-bold text-primary">{counter.value}</span>
+          <Button type="button" variant="ghost" size="icon" className="h-5 w-5 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onRemove} aria-label="Remove counter"><X className="h-3 w-3" /></Button>
+        </>
+      ) : (
+        <>
+          <Button type="button" variant="ghost" size="sm" className="h-5 min-w-7 rounded-sm px-1.5 font-display text-sm font-bold leading-none text-muted-foreground hover:bg-primary/10 hover:text-primary" onClick={() => onChange(-1)} disabled={disabled}>-</Button>
+          <span className="min-w-7 text-center font-display text-sm font-bold text-primary">{counter.value}</span>
+          <Button type="button" variant="ghost" size="sm" className="h-5 min-w-7 rounded-sm px-1.5 font-display text-sm font-bold leading-none text-muted-foreground hover:bg-primary/10 hover:text-primary" onClick={() => onChange(1)} disabled={disabled}>+</Button>
+        </>
+      )}
+    </div>
+  );
+}
 
 const MEMORY_DIALOG_CONTENT_CLASS = "glass-panel border-primary/20 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,36rem)] overflow-hidden gap-0 content-start grid-rows-[auto_minmax(0,1fr)]";
 const MEMORY_DIALOG_BODY_CLASS = "h-full border-t border-white/10 pt-3 space-y-3 overflow-y-auto pr-1";
@@ -139,7 +191,7 @@ function getDexterity(character: Character): number {
 }
 
 function getMemories(character: Character): Memory[] {
-  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+  const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
   return (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
 }
 
@@ -187,6 +239,10 @@ export function CharacterSheet({
   const [statDrafts, setStatDrafts] = useState<Record<keyof CharacterStats, string>>(toStatDrafts(character.stats));
   const [isAddingEcho, setIsAddingEcho] = useState(false);
   const [newEchoDraft, setNewEchoDraft] = useState<Echo>(createDefaultEcho());
+  const [pendingEchoDeleteIndex, setPendingEchoDeleteIndex] = useState<number | null>(null);
+  const [memoriesForBank, setMemoriesForBank] = useState<Memory[]>([]);
+  const [isSavingToBank, setIsSavingToBank] = useState(false);
+  const [isAddingCounter, setIsAddingCounter] = useState(false);
   const inventoryNotesRef = useRef<HTMLTextAreaElement>(null);
   const displayAttributes = normalizeExpandedAttributes(character);
   const updateChar = useUpdateCharacter();
@@ -203,6 +259,9 @@ export function CharacterSheet({
       setStatDrafts(toStatDrafts(character.stats));
       setIsAddingEcho(false);
       setNewEchoDraft(createDefaultEcho());
+      setPendingEchoDeleteIndex(null);
+      setMemoriesForBank([]);
+      setIsAddingCounter(false);
     }
   }, [open, character]);
 
@@ -214,35 +273,41 @@ export function CharacterSheet({
   useLayoutEffect(() => {
     if (!isEditing || !inventoryNotesRef.current) return;
     const textarea = inventoryNotesRef.current;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.max(180, textarea.scrollHeight)}px`;
+    const nextHeight = Math.max(180, textarea.scrollHeight);
+    if (nextHeight > textarea.offsetHeight) textarea.style.height = `${nextHeight}px`;
   }, [isEditing, editData.inventoryNotes]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const data = { ...editData };
     data.soulCore = data.soulCore || character.soulCore || "Dormant";
     data.rank = getRankForSoulCore(data.soulCore);
     const currentClass = data.soulClass || "Beast";
     const fragments = data.soulFragments ?? 0;
     const oldFragments = character.soulFragments ?? 0;
-    const addedFragments = Math.max(0, fragments - oldFragments);
-    const newTotal = (character.totalSoulFragments ?? 0) + addedFragments;
-    data.totalSoulFragments = newTotal;
+    const progression = normalizeStatProgression(data.statProgression, character.soulFragments ?? 0, currentClass);
+    data.statProgression = progression;
 
     const oldMaxEssence = character.maxEssence ?? 10;
-    const result = computeClassUp(currentClass, fragments, newTotal);
+    const result = computeClassUp(currentClass, fragments);
+    const shouldApplyTitan = result.newClass === "Titan" && result.newFragments >= 7000 && !progression.titanApplied;
+    if (shouldApplyTitan) progression.titanApplied = true;
+    if (result.newClass !== currentClass) {
+      progression.allocationClass = result.newClass;
+      progression.processedMilestones = 0;
+      progression.allocationHistory = [];
+    }
     data.soulFragments = result.newFragments;
     data.soulClass = result.newClass;
     data.totalSoulFragments = result.newTotalFragments;
     data.maxEssence = result.newMaxEssence;
 
-    const essenceGain = result.newMaxEssence - oldMaxEssence;
-    if (essenceGain > 0) {
-      data.currentEssence = (character.currentEssence ?? 0) + essenceGain;
-    }
+    const essenceChange = result.newMaxEssence - oldMaxEssence;
+    data.currentEssence = essenceChange > 0
+      ? Math.min(result.newMaxEssence, (character.currentEssence ?? 0) + essenceChange)
+      : Math.min(character.currentEssence ?? 0, result.newMaxEssence);
 
     if (data.memories) {
-      const proficiencyBonus = getProficiencyBonus(data.totalSoulFragments ?? 0);
+      const proficiencyBonus = getProficiencyBonus(data.soulFragments ?? 0);
       data.memories = (data.memories as any[]).map((memory) => normalizeMemory(memory, proficiencyBonus));
     }
     data.echoes = serializeEchoes(data.echoes);
@@ -256,11 +321,46 @@ export function CharacterSheet({
       const parsed = Number.parseInt(raw, 10);
       nextStats[key] = Number.isNaN(parsed) ? 0 : parsed;
     }
+    if (result.newClass === currentClass && result.newFragments < oldFragments) {
+      const rollback = rollbackStatAllocations(progression, result.newFragments, currentClass, nextStats);
+      data.statProgression = rollback.progression;
+      Object.assign(nextStats, rollback.stats);
+    }
+    if (shouldApplyTitan) {
+      for (const key of STAT_KEYS) nextStats[key] += 5;
+    }
     data.stats = nextStats;
     data.armorClass = Math.max(1, data.armorClass ?? character.armorClass ?? 8);
 
+    if (memoriesForBank.length > 0) {
+      setIsSavingToBank(true);
+      try {
+        for (const memory of memoriesForBank) {
+          const response = await fetch(`/api/memory-bank/deposit/${character.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ ...memory, isSummoned: false }),
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || `Failed to move ${memory.name} to the Memory Bank`);
+          }
+        }
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to move memories to the Memory Bank");
+        setIsSavingToBank(false);
+        return;
+      }
+    }
+
     updateChar.mutate({ id: character.id, updates: data }, {
-      onSuccess: () => setIsEditing(false)
+      onSuccess: () => {
+        setMemoriesForBank([]);
+        setIsSavingToBank(false);
+        setIsEditing(false);
+      },
+      onError: () => setIsSavingToBank(false),
     });
   };
 
@@ -358,12 +458,18 @@ export function CharacterSheet({
   };
 
   const memories = getMemories(character);
-  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+  const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
   const characterEchoes = normalizeEchoes(character.echoes);
   const editEchoes = normalizeEchoes(editData.echoes);
   const visibleEchoes = isEditing ? editEchoes : characterEchoes;
+  const displayCounters = normalizeSheetCounters(isEditing ? editData.sheetCounters : character.sheetCounters);
   const characterStats = normalizeStats(character.stats);
   const editStats = normalizeStats(editData.stats);
+  const progressionClass = character.soulClass || "Beast";
+  const statProgression = normalizeStatProgression(character.statProgression, character.soulFragments ?? 0, progressionClass);
+  const editStatProgression = normalizeStatProgression(editData.statProgression, editData.soulFragments ?? 0, editData.soulClass || progressionClass);
+  const nextStatAllocation = getNextStatAllocation(statProgression, character.soulFragments ?? 0, progressionClass, characterStats);
+  const pendingStatAllocations = getPendingStatAllocationCount(statProgression, character.soulFragments ?? 0, progressionClass);
   const starSeekingArmorBonus = getStarSeekingArmorBonus(displayAttributes);
   const effectiveArmorClass = getEffectiveArmorClass(character) + starSeekingArmorBonus;
   const baseArmorClass = getBaseArmorClass(character);
@@ -372,6 +478,104 @@ export function CharacterSheet({
 
   const instantUpdate = (updates: Partial<Character>) => {
     updateChar.mutate({ id: character.id, updates });
+  };
+
+  const handleCounterChange = (counterId: string, delta: number) => {
+    if (!canEdit || isEditing || updateChar.isPending) return;
+    const counters = normalizeSheetCounters(character.sheetCounters).map((counter) =>
+      counter.id === counterId ? { ...counter, value: counter.value + delta } : counter,
+    );
+    instantUpdate({ sheetCounters: counters });
+  };
+
+  const handleRemoveCounter = (counterId: string) => {
+    if (!isEditing) return;
+    setEditData((current) => ({
+      ...current,
+      sheetCounters: normalizeSheetCounters(current.sheetCounters).filter((counter) => counter.id !== counterId),
+    }));
+  };
+
+  const handleCounterTargetClick = (
+    event: React.MouseEvent,
+    targetType: SheetCounterTarget,
+    targetIndex: number,
+  ) => {
+    if (!isAddingCounter) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextCounter: SheetCounter = {
+      id: `counter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      targetType,
+      targetIndex,
+      value: 0,
+    };
+    if (isEditing) {
+      setEditData((current) => ({
+        ...current,
+        sheetCounters: [...normalizeSheetCounters(current.sheetCounters), nextCounter],
+      }));
+    } else {
+      instantUpdate({ sheetCounters: [...normalizeSheetCounters(character.sheetCounters), nextCounter] });
+    }
+    setIsAddingCounter(false);
+  };
+
+  const countersFor = (targetType: SheetCounterTarget, targetIndex: number) =>
+    displayCounters.filter((counter) => counter.targetType === targetType && counter.targetIndex === targetIndex);
+
+  const renderCounters = (targetType: SheetCounterTarget, targetIndex: number) =>
+    countersFor(targetType, targetIndex).map((counter) => (
+      <CounterControls
+        key={counter.id}
+        counter={counter}
+        editing={isEditing}
+        disabled={!canEdit || updateChar.isPending}
+        onChange={(delta) => handleCounterChange(counter.id, delta)}
+        onRemove={() => handleRemoveCounter(counter.id)}
+      />
+    ));
+
+  const handleAllocateStat = (key: StatKey) => {
+    if (!canEdit || !nextStatAllocation || updateChar.isPending) return;
+    const amount = nextStatAllocation.options[key];
+    if (!amount) return;
+    instantUpdate({
+      stats: { ...characterStats, [key]: characterStats[key] + amount },
+      statProgression: {
+        ...statProgression,
+        processedMilestones: nextStatAllocation.milestone,
+        allocationHistory: [
+          ...(statProgression.allocationHistory || []),
+          { milestone: nextStatAllocation.milestone, stat: key, amount, className: progressionClass },
+        ],
+      },
+    });
+  };
+
+  const handleTrainingChoice = (key: StatKey, kind: "physical" | "mental") => {
+    if (!canEdit || updateChar.isPending) return;
+    const current = statProgression.training[key];
+    const training = { ...statProgression.training, [key]: current === "proficient" ? "expertise" as const : "proficient" as const };
+    instantUpdate({
+      statProgression: {
+        ...statProgression,
+        training,
+        ...(kind === "physical" ? { physicalChoice: key } : { mentalChoice: key }),
+      },
+    });
+  };
+
+  const cycleTraining = (key: StatKey) => {
+    const normalizedEditProgression = normalizeStatProgression(editData.statProgression, editData.soulFragments ?? 0, editData.soulClass || progressionClass);
+    const training = { ...normalizedEditProgression.training };
+    if (!training[key]) training[key] = "proficient";
+    else if (training[key] === "proficient") training[key] = "expertise";
+    else delete training[key];
+    setEditData({
+      ...editData,
+      statProgression: { ...normalizedEditProgression, training },
+    });
   };
 
   const setEditStatDraft = (key: keyof CharacterStats, value: string) => {
@@ -529,7 +733,7 @@ export function CharacterSheet({
     if (!mem.weaponDamage) return;
     const d20 = Math.floor(Math.random() * 20) + 1;
     const proficiencyModifier = mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0;
-    const mod = mem.weaponDamage.hitModifier + proficiencyModifier;
+    const mod = getWeaponHitModifier(mem, characterStats) + proficiencyModifier;
     const total = d20 + mod;
     const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
     const resultStr = `D20: ${d20} ${modStr}`;
@@ -554,7 +758,8 @@ export function CharacterSheet({
 
   const handleWeaponDamage = (mem: Memory, memoryIndex: number) => {
     if (!mem.weaponDamage) return;
-    const { damageDie, diceCount, damageModifier } = mem.weaponDamage;
+    const { damageDie, diceCount } = mem.weaponDamage;
+    const damageModifier = getWeaponDamageModifier(mem, characterStats);
     const sides = parseDieSides(damageDie);
     const rolls = Array.from({ length: diceCount }, () => Math.floor(Math.random() * sides) + 1);
     const rollSum = rolls.reduce((a, b) => a + b, 0);
@@ -643,10 +848,7 @@ export function CharacterSheet({
     const currentClass = character.soulClass || "Beast";
     const maxFrag = getMaxFragmentsForClass(currentClass);
     const newFragments = Math.max(0, Math.min(character.soulFragments + delta, maxFrag));
-    const addedFragments = newFragments - character.soulFragments;
-    const newTotal = (character.totalSoulFragments || 0) + Math.max(0, addedFragments);
-
-    const result = computeClassUp(currentClass, newFragments, newTotal);
+    const result = computeClassUp(currentClass, newFragments);
 
     const oldMaxEssence = character.maxEssence ?? 10;
     const updates: Partial<Character> = {
@@ -655,11 +857,28 @@ export function CharacterSheet({
       totalSoulFragments: result.newTotalFragments,
       maxEssence: result.newMaxEssence,
     };
-
-    const essenceGain = result.newMaxEssence - oldMaxEssence;
-    if (essenceGain > 0) {
-      updates.currentEssence = (character.currentEssence ?? 0) + essenceGain;
+    const progression = normalizeStatProgression(character.statProgression, character.soulFragments ?? 0, currentClass);
+    if (result.newClass === "Titan" && result.newFragments >= 7000 && !progression.titanApplied) {
+      const titanStats = normalizeStats(character.stats);
+      for (const key of STAT_KEYS) titanStats[key] += 5;
+      updates.stats = titanStats;
+      progression.titanApplied = true;
     }
+    if (result.newClass !== currentClass) {
+      progression.allocationClass = result.newClass;
+      progression.processedMilestones = 0;
+      progression.allocationHistory = [];
+    } else if (result.newFragments < character.soulFragments) {
+      const rollback = rollbackStatAllocations(progression, result.newFragments, currentClass, normalizeStats(updates.stats || character.stats));
+      updates.stats = rollback.stats;
+      Object.assign(progression, rollback.progression);
+    }
+    updates.statProgression = progression;
+
+    const essenceChange = result.newMaxEssence - oldMaxEssence;
+    updates.currentEssence = essenceChange > 0
+      ? Math.min(result.newMaxEssence, (character.currentEssence ?? 0) + essenceChange)
+      : Math.min(character.currentEssence ?? 0, result.newMaxEssence);
 
     instantUpdate(updates);
   };
@@ -680,13 +899,19 @@ export function CharacterSheet({
   const isMaxClass = currentTierIdx >= CLASS_TIERS.length - 1;
   const displayedSoulCore = (isEditing ? editData.soulCore : character.soulCore) || "Dormant";
   const displayedRank = getRankForSoulCore(displayedSoulCore);
-  const accentColor = normalizeAccentColor(isEditing ? editData.accentColor : character.accentColor);
+  const customAttributePalette = getCustomAttributePalette(character.name);
+  const accentColor = customAttributePalette?.primary || normalizeAccentColor(isEditing ? editData.accentColor : character.accentColor);
+  const accentSecondaryColor = customAttributePalette?.secondary || accentColor;
+  const characterAccentStyle = {
+    "--character-accent": accentColor,
+    "--character-accent-secondary": accentSecondaryColor,
+  } as React.CSSProperties;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="character-accent-scope glass-panel max-w-7xl h-[90vh] p-0 overflow-hidden flex flex-col border-primary/30"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={characterAccentStyle}
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
         
@@ -742,16 +967,22 @@ export function CharacterSheet({
                       className="h-7 text-xs bg-black/50 border-primary/30 inline-block w-[200px]"
                       placeholder="True Name"
                     />
-                    <label className="flex items-center gap-1.5 normal-case tracking-normal" title="Character accent color">
+                    {customAttributePalette ? (
+                      <span className="flex items-center gap-1.5 normal-case tracking-normal" title="Designated custom attribute palette">
+                        <span className="h-4 w-4 rounded-full border border-white/20" style={{ backgroundColor: accentColor }} />
+                        <span className="h-4 w-4 rounded-full border border-white/20" style={{ backgroundColor: accentSecondaryColor }} />
+                        <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Attributes</span>
+                      </span>
+                    ) : <label className="flex items-center gap-1.5 normal-case tracking-normal" title="Custom attribute color">
                       <input
                         type="color"
                         value={accentColor}
                         onChange={(event) => setEditData({ ...editData, accentColor: event.target.value })}
                         className="h-7 w-8 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
-                        aria-label="Character accent color"
+                        aria-label="Custom attribute color"
                       />
-                      <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Accent</span>
-                    </label>
+                      <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Attributes</span>
+                    </label>}
                   </>
                 ) : character.trueName}
               </p>
@@ -760,9 +991,14 @@ export function CharacterSheet({
           
           <div className="flex items-center gap-4">
             {canEdit && (
+              <Button type="button" variant="outline" onClick={() => setIsAddingCounter((current) => !current)} className={isAddingCounter ? "border-destructive/50 text-destructive hover:bg-destructive/10" : "border-primary/35 text-primary hover:bg-primary/10"}>
+                {isAddingCounter ? <><X className="mr-2 h-4 w-4" /> Cancel Counter</> : <><Hash className="mr-2 h-4 w-4" /> Add a Counter</>}
+              </Button>
+            )}
+            {canEdit && (
               isEditing ? (
-                <Button onClick={handleSave} disabled={updateChar.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  <Save className="w-4 h-4 mr-2" /> {updateChar.isPending ? "Saving..." : "Save Changes"}
+                <Button onClick={handleSave} disabled={updateChar.isPending || isSavingToBank} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <Save className="w-4 h-4 mr-2" /> {updateChar.isPending || isSavingToBank ? "Saving..." : "Save Changes"}
                 </Button>
               ) : (
                 <Button variant="outline" onClick={() => setIsEditing(true)} className="border-primary/50 text-primary hover:bg-primary/10">
@@ -773,86 +1009,21 @@ export function CharacterSheet({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
+        <div className={`flex-1 overflow-y-auto p-6 scroll-smooth ${isAddingCounter ? "cursor-crosshair" : ""}`}>
+          {isAddingCounter && (
+            <div className="sticky top-0 z-20 mb-4 rounded-lg border border-primary/35 bg-background/95 px-4 py-2 text-center text-sm font-medium text-primary shadow-lg backdrop-blur">
+              Click the attribute, memory, or echo that should receive the counter.
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[19rem_repeat(2,minmax(0,1fr))]">
             
             {/* Progression, echoes, and stats */}
             <div className="contents">
-              {/* Soul Fragments Block */}
-              <div className="character-accent-panel character-accent-glow order-3 relative overflow-hidden rounded-xl border px-5 py-4 lg:col-span-3">
-                <div className="character-accent-soft pointer-events-none absolute inset-x-1/4 top-0 h-20 blur-[45px]" />
-                <div className="relative flex flex-col items-center justify-between gap-4 sm:flex-row">
-                  <div className="flex min-w-0 flex-wrap items-end justify-center gap-x-3 gap-y-2 sm:justify-start">
-                    <Gem className="character-accent-text mb-1 h-5 w-5 shrink-0" />
-                    <div>
-                      <p className="character-accent-muted text-[9px] font-bold uppercase tracking-[0.2em]">Nightmare Rank</p>
-                      {isEditing ? (
-                        <Select
-                          value={displayedSoulCore}
-                          onValueChange={(value) => setEditData({
-                            ...editData,
-                            soulCore: value,
-                            rank: getRankForSoulCore(value),
-                          })}
-                        >
-                          <SelectTrigger className="character-accent-border character-accent-text mt-1 h-8 w-[150px] bg-black/50 font-display">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SOUL_CORES.map((soulCore) => (
-                              <SelectItem key={soulCore} value={soulCore}>{soulCore}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <p className="character-accent-text font-display text-xl font-bold">{displayedSoulCore}</p>
-                      )}
-                    </div>
-                    <div className="character-accent-muted mb-0.5 text-xl font-display">·</div>
-                    <div>
-                      <p className="character-accent-muted text-[9px] font-bold uppercase tracking-[0.2em]">Class</p>
-                      <p className="character-accent-text font-display text-xl font-bold" data-testid="text-soul-class">{currentClass}</p>
-                    </div>
-                    <div className="character-accent-muted mb-0.5 text-xl font-display">—</div>
-                    <div>
-                      <p className="character-accent-muted text-[9px] font-bold uppercase tracking-[0.2em]">Fragments</p>
-                      <p className="character-accent-text font-display text-xl font-bold">
-                        {character.soulFragments} / {maxFragments}
-                        {isMaxClass && character.soulFragments >= maxFragments && (
-                          <span className="ml-2 text-[10px] font-sans font-normal uppercase tracking-widest text-muted-foreground">Max class</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid w-full grid-cols-4 gap-2 sm:w-auto">
-                    {[-10, -1, 1, 10].map((delta) => {
-                      const increasing = delta > 0;
-                      const disabled = !canEdit
-                        || isEditing
-                        || (!increasing && character.soulFragments <= 0)
-                        || (increasing && isMaxClass && character.soulFragments >= maxFragments);
-                      return (
-                        <Button
-                          key={delta}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="character-accent-button min-w-14"
-                          onClick={() => handleFragmentChange(delta)}
-                          disabled={disabled}
-                          data-testid={`button-fragments-${delta > 0 ? "plus" : "minus"}${Math.abs(delta)}`}
-                        >
-                          {delta > 0 ? "+" : "−"}{Math.abs(delta)}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Echoes Column */}
-              <div className="character-custom-scope order-4 space-y-4">
+              {/* Echoes sit directly beneath attributes in the left rail. */}
+              <div
+                className="character-custom-scope order-4 space-y-4 lg:col-start-1 lg:row-start-3"
+                style={{ "--character-accent": DEFAULT_ECHO_ACCENT_COLOR } as React.CSSProperties}
+              >
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="flex-1 border-b border-white/10 pb-2 font-display text-lg text-foreground">Echoes</h3>
@@ -862,7 +1033,7 @@ export function CharacterSheet({
                         variant="outline"
                         size="sm"
                         onClick={() => setIsAddingEcho(true)}
-                        className="character-accent-button mb-2 h-7"
+                        className="mb-2 h-7 border-primary/30 text-primary hover:bg-primary/10"
                       >
                         <Plus className="w-3 h-3 mr-1" /> Add Echo
                       </Button>
@@ -872,42 +1043,30 @@ export function CharacterSheet({
                     {visibleEchoes.length > 0 ? visibleEchoes.map((echo, i) => {
                       const hpPercent = echo.maxHealth > 0 ? (echo.currentHealth / echo.maxHealth) * 100 : 0;
                       return (
-                        <div key={i} className="space-y-2">
+                        <div key={i} className={`space-y-2 ${isAddingCounter ? "rounded-lg ring-1 ring-primary/40 hover:ring-2" : ""}`} onClickCapture={(event) => handleCounterTargetClick(event, "echo", i)}>
                           <div className={`relative p-3 rounded-lg border transition-all ${
-                            echo.isSummoned
-                              ? "character-accent-text character-accent-border character-accent-soft character-accent-glow"
+                            echo.isSummoned && !isEditing
+                              ? "character-accent-border character-accent-soft"
                               : "bg-secondary/30 border-white/5 hover:bg-secondary/50 hover:border-white/10"
                           }`}>
                             <div className="flex items-start justify-between gap-2">
-                              {isEditing ? (
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Sparkles className="w-4 h-4 shrink-0" />
-                                    <p className="font-medium text-sm text-foreground truncate">{echo.name || `Echo ${i + 1}`}</p>
-                                    <span className="character-accent-border character-accent-soft character-accent-text text-[10px] font-bold uppercase tracking-widest border px-1.5 py-0.5 rounded shrink-0">
-                                      AC {echo.armorClass}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <EchoPopup
-                                  echo={echo}
-                                  accentColor={accentColor}
-                                  canEdit={canEdit}
-                                  onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
-                                  onDelete={() => handleDeleteEchoAtIndex(i)}
-                                >
+                              <EchoPopup
+                                echo={echo}
+                                canEdit={canEdit}
+                                onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
+                                startInEditMode={isEditing}
+                              >
                                   <div className="flex-1 cursor-pointer min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                       <Sparkles className="w-4 h-4 shrink-0" />
                                       <p className="font-medium text-sm text-foreground truncate">{echo.name || `Echo ${i + 1}`}</p>
-                                      <span className="character-accent-border character-accent-soft character-accent-text text-[10px] font-bold uppercase tracking-widest border px-1.5 py-0.5 rounded shrink-0">
+                                      <span className="character-accent-text shrink-0 text-[10px] font-bold uppercase tracking-widest">
                                         AC {echo.armorClass}
                                       </span>
                                     </div>
                                   </div>
-                                </EchoPopup>
-                              )}
+                              </EchoPopup>
+                              {isEditing && <Button type="button" variant="ghost" size="icon" onClick={() => setPendingEchoDeleteIndex(i)} className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label={`Delete ${echo.name}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
                               {canEdit && !isEditing && (
                                 <Button
                                   type="button"
@@ -993,7 +1152,7 @@ export function CharacterSheet({
                                           type="button"
                                           variant="outline"
                                           size="sm"
-                                          className="character-accent-button flex-1 h-7 px-2 text-[11px]"
+                                          className="character-accent-button h-7 flex-1 px-2 text-[11px]"
                                           onClick={() => handleEchoMoveHit(echo, i, move, moveIndex)}
                                           data-testid={`button-echo-hit-${i}-${moveIndex}`}
                                         >
@@ -1004,7 +1163,7 @@ export function CharacterSheet({
                                           type="button"
                                           variant="outline"
                                           size="sm"
-                                          className="character-accent-button flex-1 h-7 px-2 text-[11px]"
+                                          className="character-accent-button h-7 flex-1 px-2 text-[11px]"
                                           onClick={() => handleEchoMoveDamage(echo, i, move, moveIndex)}
                                           data-testid={`button-echo-dmg-${i}-${moveIndex}`}
                                         >
@@ -1018,7 +1177,7 @@ export function CharacterSheet({
                                             {lastEchoMoveRoll.type === "hit" ? "Hit Roll" : "Damage Roll"}
                                           </span>
                                           <p className="text-sm text-foreground mt-1">{lastEchoMoveRoll.result}</p>
-                                          <p className="character-accent-text text-lg font-display font-bold mt-1">
+                                          <p className="character-accent-text mt-1 font-display text-lg font-bold">
                                             = {lastEchoMoveRoll.total}
                                           </p>
                                         </div>
@@ -1029,25 +1188,7 @@ export function CharacterSheet({
                               )}
                             </div>
                           </div>
-
-                          {isEditing && (
-                            <EchoPopup
-                              echo={echo}
-                              accentColor={accentColor}
-                              canEdit={canEdit}
-                              onSave={(nextEcho: Echo) => handleSaveEchoAtIndex(i, nextEcho)}
-                              onDelete={() => handleDeleteEchoAtIndex(i)}
-                              startInEditMode
-                            >
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="character-accent-button w-full h-7"
-                              >
-                                <Edit2 className="w-3 h-3 mr-1" /> Edit Echo
-                              </Button>
-                            </EchoPopup>
-                          )}
+                          {renderCounters("echo", i)}
                         </div>
                       );
                     }) : <p className="text-sm text-muted-foreground italic">None</p>}
@@ -1056,14 +1197,34 @@ export function CharacterSheet({
               </div>
 
               {/* Stats Block */}
-              <div className="order-1 h-full space-y-4 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-5">
-                <h4 className="text-sm font-bold uppercase tracking-widest text-primary/80">Stats</h4>
-                <div className="grid grid-cols-2 gap-3">
+              <div className={`order-1 h-full space-y-3 ${pendingStatAllocations > 0 ? "rounded-xl border border-primary/35 bg-primary/[0.03] p-3 shadow-[0_0_24px_rgba(251,191,36,0.14)]" : "p-1"}`}>
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <h4 className="text-sm font-bold uppercase tracking-widest text-primary/80">Stats</h4>
+                  {pendingStatAllocations > 0 && !isEditing && (
+                    <span className="max-w-[14rem] rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-right text-[8px] font-bold uppercase leading-tight tracking-wider text-primary">
+                      {pendingStatAllocations > 1 ? `${pendingStatAllocations} choices · ` : ""}{nextStatAllocation?.label}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   {[STAT_FIELDS.slice(0, 3), STAT_FIELDS.slice(3)].map((column, columnIndex) => (
-                    <div key={columnIndex} className="space-y-2">
-                      {column.map((stat) => (
-                        <div key={stat.key} className="rounded-md border border-primary/20 bg-black/30 px-2 py-2">
-                          <p className="text-[10px] uppercase tracking-widest text-primary/70">{stat.short}</p>
+                    <div key={columnIndex} className="space-y-1">
+                      {column.map((stat) => {
+                        const trainingLevel = (isEditing ? editStatProgression : statProgression).training[stat.key];
+                        const allocationAmount = nextStatAllocation?.options[stat.key];
+                        return <div key={stat.key} className={`border-b px-1 py-1.5 last:border-b-0 ${!isEditing && allocationAmount ? "rounded-md border-primary/25 bg-primary/5" : "border-white/5"}`}>
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{stat.short}</p>
+                            {isEditing ? (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => cycleTraining(stat.key)} className="h-5 px-1 text-[8px] uppercase text-muted-foreground" title="Cycle check/save training">
+                                {trainingLevel === "expertise" ? "EXP" : trainingLevel === "proficient" ? "PROF" : "—"}
+                              </Button>
+                            ) : trainingLevel ? (
+                              <span className={`rounded px-1 py-0.5 text-[8px] font-bold uppercase ${trainingLevel === "expertise" ? "bg-amber-400/15 text-amber-200" : "bg-primary/10 text-primary"}`} title={`${trainingLevel} in checks and saves`}>
+                                {trainingLevel === "expertise" ? "EXP" : "PROF"}
+                              </span>
+                            ) : null}
+                          </div>
                           {isEditing ? (
                             <Input
                               type="number"
@@ -1081,16 +1242,40 @@ export function CharacterSheet({
                               data-testid={`input-stat-${stat.key}`}
                             />
                           ) : (
-                            <p className="text-base font-display text-primary mt-1">{characterStats[stat.key]}</p>
+                            <div className="mt-1 flex items-center justify-between gap-1">
+                              <p className="font-display text-base text-foreground">{characterStats[stat.key]}</p>
+                              {!!allocationAmount && canEdit && (
+                                <Button type="button" size="sm" onClick={() => handleAllocateStat(stat.key)} disabled={updateChar.isPending} className="h-6 min-w-8 bg-primary/15 px-1.5 text-[10px] font-bold text-primary hover:bg-primary/25" aria-label={`Increase ${stat.label} by ${allocationAmount}`}>
+                                  +{allocationAmount}
+                                </Button>
+                              )}
+                            </div>
                           )}
-                        </div>
-                      ))}
+                        </div>;
+                      })}
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
-                  <div className="px-1 py-2">
+                {!isEditing && canEdit && getClassTierIndex(progressionClass) >= 1 && !statProgression.physicalChoice && (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-2">
+                    <p className="mb-1.5 text-[9px] uppercase tracking-widest text-primary/80">Choose Monster physical training</p>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(["strength", "dexterity", "constitution"] as StatKey[]).map((key) => <Button key={key} type="button" variant="outline" size="sm" onClick={() => handleTrainingChoice(key, "physical")} disabled={updateChar.isPending} className="h-7 border-primary/20 px-1 text-[9px] uppercase text-primary hover:bg-primary/10">{key.slice(0, 3)}</Button>)}
+                    </div>
+                  </div>
+                )}
+                {!isEditing && canEdit && getClassTierIndex(progressionClass) >= 2 && !statProgression.mentalChoice && (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-2">
+                    <p className="mb-1.5 text-[9px] uppercase tracking-widest text-primary/80">Choose Demon mental training</p>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(["intelligence", "wisdom", "charisma"] as StatKey[]).map((key) => <Button key={key} type="button" variant="outline" size="sm" onClick={() => handleTrainingChoice(key, "mental")} disabled={updateChar.isPending} className="h-7 border-primary/20 px-1 text-[9px] uppercase text-primary hover:bg-primary/10">{key.slice(0, 3)}</Button>)}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+                  <div className="px-1 py-1">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Armor Class</p>
                     {isEditing ? (
                       <div className="mt-1 space-y-1">
@@ -1119,11 +1304,89 @@ export function CharacterSheet({
                     )}
                   </div>
 
-                  <div className="border-l border-white/10 px-4 py-2">
+                  <div className="border-l border-white/10 px-3 py-1">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Proficiency</p>
                     <p className="mt-1 font-display text-xl text-primary">+{proficiencyBonus}</p>
-                    <p className="text-[9px] leading-snug text-muted-foreground">{character.totalSoulFragments ?? 0} total shards</p>
+                    <p className="text-[9px] leading-snug text-muted-foreground">{character.soulFragments ?? 0} fragments</p>
                   </div>
+                </div>
+
+                <div className="border-t border-white/10 pt-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-display text-base font-bold sm:text-lg">
+                    {isEditing ? (
+                      <Select
+                        value={displayedSoulCore}
+                        onValueChange={(value) => setEditData({
+                          ...editData,
+                          soulCore: value,
+                          rank: getRankForSoulCore(value),
+                        })}
+                      >
+                        <SelectTrigger className="h-7 w-[112px] border-primary/25 bg-black/30 px-2 font-display text-xs text-primary">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SOUL_CORES.map((soulCore) => (
+                            <SelectItem key={soulCore} value={soulCore}>{soulCore}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-primary">{displayedSoulCore}</span>
+                    )}
+                    <span className="text-muted-foreground/50">·</span>
+                    <span className="cursor-help text-foreground" data-testid="text-soul-class" title={CLASS_PROGRESSION_DESCRIPTIONS[currentClass]}>{currentClass}</span>
+                    <span className="text-muted-foreground/50">—</span>
+                    {isEditing ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={editData.soulFragments ?? 0}
+                          onChange={(event) => setEditData({
+                            ...editData,
+                            soulFragments: Math.max(0, Number.parseInt(event.target.value, 10) || 0),
+                          })}
+                          className="h-7 w-16 border-primary/25 bg-black/30 px-2 text-center font-display text-xs text-primary"
+                          aria-label="Current fragments"
+                          data-testid="input-current-fragments"
+                        />
+                        <span className="text-xs text-muted-foreground">/ {maxFragments}</span>
+                      </div>
+                    ) : (
+                      <span className="text-primary">
+                        {character.soulFragments} / {maxFragments}
+                        {isMaxClass && character.soulFragments >= maxFragments && (
+                          <span className="ml-1 font-sans text-[8px] font-normal uppercase tracking-widest text-muted-foreground">Max</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {!isEditing && (
+                    <div className="mt-1.5 flex items-center justify-center gap-1">
+                      {[-10, -1, 1, 10].map((delta) => {
+                        const increasing = delta > 0;
+                        const disabled = !canEdit
+                          || (!increasing && character.soulFragments <= 0)
+                          || (increasing && isMaxClass && character.soulFragments >= maxFragments);
+                        return (
+                          <Button
+                            key={delta}
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 min-w-7 rounded-sm px-1.5 font-display text-sm font-bold leading-none text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                            onClick={() => handleFragmentChange(delta)}
+                            disabled={disabled}
+                            data-testid={`button-fragments-${delta > 0 ? "plus" : "minus"}${Math.abs(delta)}`}
+                          >
+                            {delta === -10 ? "--" : delta === -1 ? "-" : delta === 1 ? "+" : "++"}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1239,22 +1502,28 @@ export function CharacterSheet({
                 </div>
               </div>
 
-              {/* Attributes & Memories Grid */}
-              <div className="order-5 grid grid-cols-1 gap-6 md:grid-cols-2 lg:col-span-2">
+              {/* Attributes and memories */}
+              <div className="contents">
                 {/* Attributes */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Attributes</h3>
+                <div className="order-3 space-y-4 lg:col-start-1 lg:row-start-2">
                   {isEditing ? (
                     <TraitEditor
-                      title="Edit Attributes"
+                      title="Attributes"
                       traits={editData.attributes || []}
                       onChange={t => setEditData({ ...editData, attributes: t })}
                       accentColor={accentColor}
+                      accentSecondaryColor={accentSecondaryColor}
+                      lockRememberedEffects={character.name.trim().toLowerCase().includes("steven")}
+                      bare
+                      addLabel="Add Attribute"
+                      renderAccessory={(index) => renderCounters("attribute", index)}
+                      onItemClickCapture={(event, index) => handleCounterTargetClick(event, "attribute", index)}
                     />
                   ) : (
-                    <div className="flex flex-col gap-2">
+                    <><h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Attributes</h3><div className="flex flex-col gap-2">
                       {displayAttributes.length > 0 ? displayAttributes.map((attr, i) => (
-                        attr.starSeeking ? (
+                        <div key={i} className={`space-y-1 ${isAddingCounter ? "rounded-lg ring-1 ring-primary/40 hover:ring-2" : ""}`} onClickCapture={(event) => handleCounterTargetClick(event, "attribute", i)}>
+                        {attr.starSeeking ? (
                           <StarSeekingPopup
                             key={i}
                             trait={attr}
@@ -1262,10 +1531,11 @@ export function CharacterSheet({
                             stats={characterStats}
                             proficiencyBonus={proficiencyBonus}
                             accentColor={accentColor}
+                            accentSecondaryColor={accentSecondaryColor}
                             onChangeForm={canEdit ? (limbId, formId) => handleStarSeekingFormChange(i, limbId, formId) : undefined}
                           >
                             <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow cursor-pointer rounded-lg border p-3 transition-all">
-                              <div className="flex items-center gap-2"><Star className="h-4 w-4 fill-amber-300/20 text-amber-300" /><p className="text-sm font-medium text-amber-200">{attr.name}</p></div>
+                              <div className="flex items-center gap-2"><Star className="character-accent-text h-4 w-4 fill-amber-300/20" /><p className="text-sm font-medium text-amber-200">{attr.name}</p></div>
                               <p className="mt-1 truncate text-xs text-muted-foreground">{attr.effect}</p>
                               {(() => {
                                 const limb = getPrimaryStarSeekingLimb(attr);
@@ -1280,9 +1550,9 @@ export function CharacterSheet({
                             </div>
                           </StarSeekingPopup>
                         ) : attr.reforging ? (
-                          <ReforgingPopup key={i} trait={attr} accentColor={accentColor} onChangeCount={canEdit ? (monsterIndex, delta) => handleReforgeCountChange(i, monsterIndex, delta) : undefined}>
+                          <ReforgingPopup key={i} trait={attr} accentColor={accentColor} accentSecondaryColor={accentSecondaryColor} onChangeCount={canEdit ? (monsterIndex, delta) => handleReforgeCountChange(i, monsterIndex, delta) : undefined}>
                             <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow rounded-lg border p-3 transition-all cursor-pointer">
-                              <div className="flex items-center gap-2"><Flame className="h-4 w-4 text-orange-400" /><p className="text-sm font-medium text-red-200">{attr.name}</p></div>
+                              <div className="flex items-center gap-2"><Flame className="character-accent-text h-4 w-4" /><p className="text-sm font-medium text-red-200">{attr.name}</p></div>
                               {attr.effect && attr.effect.trim() !== "?" && <p className="mt-1 truncate text-xs text-muted-foreground">{attr.effect}</p>}
                               <div className="ml-6 mt-2 flex items-center justify-between rounded-md border border-red-500/20 bg-black/30 px-2.5 py-1.5">
                                 <div className="min-w-0"><p className="text-[9px] uppercase tracking-widest text-orange-300/70">Goal</p><p className="truncate text-xs font-medium text-foreground">{attr.reforging.goalName || "Undiscovered"}</p></div>
@@ -1291,9 +1561,9 @@ export function CharacterSheet({
                             </div>
                           </ReforgingPopup>
                         ) : attr.rememberedBy ? (
-                          <RememberedByPopup key={i} trait={attr} accentColor={accentColor}>
+                          <RememberedByPopup key={i} trait={attr} accentColor={accentColor} accentSecondaryColor={accentSecondaryColor}>
                             <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow p-3 border rounded-lg cursor-pointer transition-all">
-                              <div className="flex items-center gap-2"><Fingerprint className="w-4 h-4 text-fuchsia-300" /><p className="font-medium text-sm text-fuchsia-200">{attr.name}</p></div>
+                              <div className="flex items-center gap-2"><Fingerprint className="character-accent-text h-4 w-4" /><p className="font-medium text-sm text-fuchsia-200">{attr.name}</p></div>
                               <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
                               <div className="mt-2 ml-6 px-2.5 py-1.5 rounded-md bg-black/30 border border-fuchsia-400/20 flex items-center justify-between">
                                 <p className="text-[9px] uppercase tracking-widest text-fuchsia-300/70">THOSE WHO KNOW</p>
@@ -1306,11 +1576,12 @@ export function CharacterSheet({
                             key={i}
                             trait={attr}
                             accentColor={accentColor}
+                            accentSecondaryColor={accentSecondaryColor}
                             onActivate={canEdit ? (name) => handleActivateSubAttribute(i, name) : undefined}
                             onLearn={canEdit && attr.activeSubAttribute ? () => handleLearnSubAttribute(i) : undefined}
                           >
                             <div className="character-custom-scope character-accent-border character-accent-soft character-accent-glow p-3 border rounded-lg cursor-pointer transition-all">
-                              <div className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-300" /><p className="font-medium text-sm text-emerald-200">{attr.name}</p></div>
+                              <div className="flex items-center gap-2"><Sparkles className="character-accent-text h-4 w-4" /><p className="font-medium text-sm text-emerald-200">{attr.name}</p></div>
                               <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
                               {attr.activeSubAttribute && (
                                 <div className="mt-2 ml-6 px-2.5 py-1.5 rounded-md bg-black/30 border border-emerald-300/20">
@@ -1322,49 +1593,54 @@ export function CharacterSheet({
                           </ExpandedTraitPopup>
                         ) : (
                           <TraitPopup key={i} trait={attr}>
-                            <div className="p-3 bg-secondary/30 border border-white/5 rounded-lg cursor-pointer hover:bg-secondary/50 hover:border-white/10 transition-all">
-                              <p className="font-medium text-sm text-foreground">{attr.name}</p>
+                            <div className="cursor-pointer rounded-lg border border-white/5 bg-secondary/30 p-3 transition-all hover:border-white/10 hover:bg-secondary/50">
+                              <p className="text-sm font-medium text-foreground">{attr.name}</p>
                               <p className="text-xs text-muted-foreground mt-1 truncate">{attr.effect}</p>
                             </div>
                           </TraitPopup>
-                        )
+                        )}
+                        {renderCounters("attribute", i)}
+                        </div>
                       )) : <p className="text-sm text-muted-foreground italic">None</p>}
-                    </div>
+                    </div></>
                   )}
                 </div>
 
                 {/* Memories */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Memories</h3>
+                <div className="order-5 space-y-4 lg:col-span-2 lg:col-start-2 lg:row-span-2 lg:row-start-2">
                   {isEditing ? (
                     <MemoryEditor
                       memories={(editData.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus))}
                       proficiencyBonus={proficiencyBonus}
+                      stats={editStats}
+                      onMoveToBank={(memory) => setMemoriesForBank((current) => [...current, memory])}
                       onChange={m => setEditData({...editData, memories: m})}
+                      renderAccessory={(index) => renderCounters("memory", index)}
+                      onItemClickCapture={(event, index) => handleCounterTargetClick(event, "memory", index)}
                     />
                   ) : (
-                    <div className="flex flex-col gap-2">
+                    <><h3 className="text-lg font-display text-foreground border-b border-white/10 pb-2">Memories</h3><div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       {memories.length > 0 ? memories.map((mem, i) => {
                         const TypeIcon = MEMORY_TYPE_ICONS[mem.memoryType] || Wrench;
                         const colorClass = MEMORY_TYPE_COLORS[mem.memoryType] || MEMORY_TYPE_COLORS.tool;
+                        const isWeaponMemory = mem.memoryType === "weapon";
                         const memoryTypeLabel = mem.memoryType === "charm" ? "utility" : mem.memoryType;
                         return (
-                          <div key={i} className={`relative p-3 rounded-lg border transition-all ${
+                          <div key={i} onClickCapture={(event) => handleCounterTargetClick(event, "memory", i)} className={`relative p-3 rounded-lg border transition-all ${isAddingCounter ? "ring-1 ring-primary/40 hover:ring-2 " : ""}${
                             mem.isSummoned
-                              ? `${colorClass} shadow-lg shadow-current/20 ring-1 ring-current/30`
-                              : "bg-secondary/30 border-white/5 hover:bg-secondary/50 hover:border-white/10"
+                              ? `${colorClass} shadow-lg shadow-current/15`
+                              : "border-white/5 bg-secondary/30 text-foreground hover:border-white/10 hover:bg-secondary/50"
                           }`}>
                             <div className="flex items-start justify-between gap-2">
-                              <TraitPopup
-                                trait={mem}
-                                accentColor={mem.memoryType === "weapon" ? accentColor : undefined}
-                                contentClassName={MEMORY_DIALOG_CONTENT_CLASS}
-                                bodyClassName={MEMORY_DIALOG_BODY_CLASS}
+                              <MemoryPopup
+                                memory={mem}
+                                proficiencyBonus={proficiencyBonus}
+                                stats={characterStats}
                               >
                                 <div className="flex-1 cursor-pointer min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <TypeIcon className="w-4 h-4 shrink-0" />
-                                    <p className="font-medium text-sm text-foreground truncate">{mem.name}</p>
+                                    <p className={`truncate text-sm font-medium ${mem.isSummoned && isWeaponMemory ? "text-primary" : "text-foreground"}`}>{mem.name}</p>
                                     <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">{memoryTypeLabel}</span>
                                   </div>
                                   <p className="text-xs text-muted-foreground truncate">{mem.effect}</p>
@@ -1387,7 +1663,7 @@ export function CharacterSheet({
                                     )}
                                   </div>
                                 </div>
-                              </TraitPopup>
+                              </MemoryPopup>
                               {canEdit && (
                                 <Button
                                   variant="outline"
@@ -1395,9 +1671,7 @@ export function CharacterSheet({
                                   onClick={() => handleSummonToggle(i)}
                                   className={`shrink-0 text-xs h-7 ${
                                     mem.isSummoned
-                                      ? mem.memoryType === "weapon"
-                                        ? "character-accent-button"
-                                        : "border-primary/50 text-primary hover:bg-primary/10"
+                                      ? "border-primary/50 text-primary hover:bg-primary/10"
                                       : "border-white/10 text-muted-foreground hover:bg-white/5"
                                   }`}
                                   data-testid={`button-summon-${i}`}
@@ -1413,20 +1687,20 @@ export function CharacterSheet({
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className={`flex-1 text-xs ${mem.memoryType === "weapon" ? "character-accent-button" : "border-primary/30 text-primary hover:bg-primary/10"}`}
+                                    className="flex-1 border-primary/30 text-xs text-primary hover:bg-primary/10"
                                     onClick={() => handleWeaponHit(mem, i)}
                                     data-testid={`button-weapon-hit-${i}`}
                                   >
-                                    <Crosshair className="w-3 h-3 mr-1" /> Hit (D20{(mem.weaponDamage.hitModifier + (mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0)) >= 0 ? "+" : ""}{mem.weaponDamage.hitModifier + (mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0)})
+                                    <Crosshair className="w-3 h-3 mr-1" /> Hit (D20{(getWeaponHitModifier(mem, characterStats) + (mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0)) >= 0 ? "+" : ""}{getWeaponHitModifier(mem, characterStats) + (mem.memoryType === "weapon" && mem.isProficient ? proficiencyBonus : 0)})
                                   </Button>
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className={`flex-1 text-xs ${mem.memoryType === "weapon" ? "character-accent-button" : "border-primary/30 text-primary hover:bg-primary/10"}`}
+                                    className="flex-1 border-primary/30 text-xs text-primary hover:bg-primary/10"
                                     onClick={() => handleWeaponDamage(mem, i)}
                                     data-testid={`button-weapon-dmg-${i}`}
                                   >
-                                    <Flame className="w-3 h-3 mr-1" /> Dmg ({mem.weaponDamage.diceCount}{mem.weaponDamage.damageDie}{mem.weaponDamage.damageModifier >= 0 ? "+" : ""}{mem.weaponDamage.damageModifier})
+                                    <Flame className="w-3 h-3 mr-1" /> Dmg ({mem.weaponDamage.diceCount}{mem.weaponDamage.damageDie}{getWeaponDamageModifier(mem, characterStats) >= 0 ? "+" : ""}{getWeaponDamageModifier(mem, characterStats)})
                                   </Button>
                                 </div>
                                 {lastWeaponRoll && lastWeaponRoll.memoryIndex === i && (
@@ -1442,10 +1716,11 @@ export function CharacterSheet({
                                 )}
                               </div>
                             )}
+                            {renderCounters("memory", i)}
                           </div>
                         );
                       }) : <p className="text-sm text-muted-foreground italic">None</p>}
-                    </div>
+                    </div></>
                   )}
                 </div>
               </div>
@@ -1527,8 +1802,8 @@ export function CharacterSheet({
           }}
         >
           <DialogContent
-            className={`character-custom-scope character-accent-border character-accent-glow ${ECHO_ADD_CONTENT_CLASS}`}
-            style={{ "--character-accent": accentColor } as React.CSSProperties}
+            className={`character-custom-scope ${ECHO_ADD_CONTENT_CLASS}`}
+            style={{ "--character-accent": DEFAULT_ECHO_ACCENT_COLOR } as React.CSSProperties}
           >
             <div className="flex h-full min-h-0 flex-col">
               <DialogHeader className="px-6 pt-6 pb-3 border-b border-white/10">
@@ -1668,6 +1943,19 @@ export function CharacterSheet({
             </div>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={pendingEchoDeleteIndex !== null} onOpenChange={(openState) => { if (!openState) setPendingEchoDeleteIndex(null); }}>
+          <AlertDialogContent className="glass-panel border-destructive/20">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-display text-xl text-destructive">Delete echo?</AlertDialogTitle>
+              <AlertDialogDescription>This will remove <span className="font-bold text-foreground">{visibleEchoes[pendingEchoDeleteIndex ?? -1]?.name || "this echo"}</span> from the sheet when you save your changes.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { if (pendingEchoDeleteIndex !== null) handleDeleteEchoAtIndex(pendingEchoDeleteIndex); setPendingEchoDeleteIndex(null); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete Echo</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

@@ -14,6 +14,14 @@ npm run build
 npm run start
 ```
 
+Open and verify the Funnel:
+
+```bash
+tailscale status
+tailscale funnel 5000
+tailscale funnel status
+```
+
 For local testing only, use `npm run dev`. Do not use the development server with
 the public Funnel.
 
@@ -24,14 +32,6 @@ $wslIp = (wsl hostname -I).Trim().Split(' ')[0]
 netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=5000
 netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=5000 connectaddress=$wslIp connectport=5000
 netsh interface portproxy show v4tov4
-```
-
-Open and verify the Funnel:
-
-```bash
-tailscale status
-tailscale funnel 5000
-tailscale funnel status
 ```
 
 Share the resulting `*.ts.net` URL with the group.

@@ -34,7 +34,7 @@ interface MemoryTradeTabProps {
 
 function getMemories(character: Character | undefined): Memory[] {
   if (!character) return [];
-  const proficiencyBonus = getProficiencyBonus(character.totalSoulFragments ?? 0);
+  const proficiencyBonus = getProficiencyBonus(character.soulFragments ?? 0);
   return (character.memories || []).map((memory) => normalizeMemory(memory, proficiencyBonus));
 }
 

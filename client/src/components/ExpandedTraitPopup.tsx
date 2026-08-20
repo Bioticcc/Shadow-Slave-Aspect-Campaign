@@ -17,6 +17,7 @@ interface ExpandedTraitPopupProps {
   onActivate?: (name: string) => void;
   onLearn?: () => void;
   accentColor?: string;
+  accentSecondaryColor?: string;
 }
 
 function TraitDetails({ trait }: { trait: Trait }) {
@@ -39,7 +40,7 @@ function TraitDetails({ trait }: { trait: Trait }) {
   );
 }
 
-export function ExpandedTraitPopup({ trait, children, onActivate, onLearn, accentColor = "#b45353" }: ExpandedTraitPopupProps) {
+export function ExpandedTraitPopup({ trait, children, onActivate, onLearn, accentColor = "#b45353", accentSecondaryColor = accentColor }: ExpandedTraitPopupProps) {
   const choices = trait.subAttributes || [];
   const active = choices.find((choice) => choice.name === trait.activeSubAttribute);
   const [selected, setSelected] = useState<Trait | null>(active || choices[0] || null);
@@ -53,12 +54,12 @@ export function ExpandedTraitPopup({ trait, children, onActivate, onLearn, accen
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         className="character-custom-scope character-accent-glow glass-panel border-emerald-300/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={{ "--character-accent": accentColor, "--character-accent-secondary": accentSecondaryColor } as React.CSSProperties}
       >
         <DialogHeader className="pb-4">
           <div className="flex items-start justify-between gap-4 pr-8">
             <DialogTitle className="font-display text-2xl text-emerald-200 text-glow flex items-center gap-2">
-              <Sparkles className="w-5 h-5" /> {trait.name}
+              <Sparkles className="character-accent-text w-5 h-5" /> {trait.name}
             </DialogTitle>
             {active && onLearn && (
               <Button

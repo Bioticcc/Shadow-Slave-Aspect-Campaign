@@ -16,7 +16,7 @@ const ABILITIES: Array<{ id: keyof CharacterStats; label: string }> = [
 
 const nonNegative = (value: string) => Math.max(0, Number.parseInt(value, 10) || 0);
 
-export function StarSeekingEditor({ trait, onChange, accentColor = "#b45353" }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string }) {
+export function StarSeekingEditor({ trait, onChange, accentColor = "#b45353", accentSecondaryColor = accentColor }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string; accentSecondaryColor?: string }) {
   const starSeeking = trait.starSeeking;
   if (!starSeeking) return null;
   const primaryLimb = starSeeking.limbs.find((limb) => limb.id === "arm") || starSeeking.limbs[0];
@@ -38,19 +38,19 @@ export function StarSeekingEditor({ trait, onChange, accentColor = "#b45353" }: 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button type="button" className="flex w-full items-center gap-3 rounded-lg border border-amber-300/40 bg-amber-400/10 p-3 text-left shadow-[0_0_18px_rgba(251,191,36,0.14)] transition-all hover:bg-amber-400/15">
+        <button type="button" className="flex w-full items-center gap-3 rounded-lg border border-white/5 bg-secondary/30 p-3 text-left transition-all hover:border-white/10 hover:bg-secondary/50">
           <Star className="h-4 w-4 shrink-0 fill-amber-300/20 text-amber-300" />
           <span className="min-w-0 flex-1"><span className="block font-medium text-amber-200">{trait.name}</span><span className="block truncate text-xs text-muted-foreground">{activeForm?.name || "Arm"} form · Click to edit</span></span>
         </button>
       </DialogTrigger>
       <DialogContent
         className="character-custom-scope character-accent-glow glass-panel border-amber-300/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,46rem)] overflow-y-auto"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={{ "--character-accent": accentColor, "--character-accent-secondary": accentSecondaryColor } as React.CSSProperties}
       >
         <DialogHeader><DialogTitle className="font-display text-2xl text-amber-200 text-glow">Edit {trait.name}</DialogTitle></DialogHeader>
         <div className="space-y-4 pt-3">
           <Input value={trait.name} onChange={(event) => onChange({ ...trait, name: event.target.value })} placeholder="Name" className="border-amber-300/20 bg-black/50" />
-          <Textarea value={trait.description} onChange={(event) => onChange({ ...trait, description: event.target.value })} placeholder="Lore Description" className="min-h-[90px] border-amber-300/20 bg-black/50" />
+          <Textarea value={trait.description} onChange={(event) => onChange({ ...trait, description: event.target.value })} placeholder="Lore Description" className="min-h-[180px] resize-y border-amber-300/20 bg-black/50" />
 
           {starSeeking.limbs.map((limb) => (
             <section key={limb.id} className="space-y-4 rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-400/10 via-black/20 to-yellow-700/5 p-5">
@@ -60,7 +60,7 @@ export function StarSeekingEditor({ trait, onChange, accentColor = "#b45353" }: 
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label className="space-y-2"><span className="text-[10px] uppercase tracking-widest text-amber-300/70">Effect</span><Input value={limb.effect} onChange={(event) => updateLimb(limb.id, { effect: event.target.value })} className="bg-black/50" /></label>
+                <label className="space-y-2"><span className="text-[10px] uppercase tracking-widest text-amber-300/70">Effect</span><Textarea value={limb.effect} onChange={(event) => updateLimb(limb.id, { effect: event.target.value })} className="min-h-[140px] resize-y bg-black/50" /></label>
                 <label className="space-y-2"><span className="text-[10px] uppercase tracking-widest text-amber-300/70">Replacement</span><Input value={limb.replacement} onChange={(event) => updateLimb(limb.id, { replacement: event.target.value })} className="bg-black/50" /></label>
                 <label className="space-y-2"><span className="text-[10px] uppercase tracking-widest text-amber-300/70">Attack Attribute</span><Select value={limb.attackAttribute} onValueChange={(attackAttribute: keyof CharacterStats) => updateLimb(limb.id, { attackAttribute })}><SelectTrigger className="bg-black/50"><SelectValue /></SelectTrigger><SelectContent>{ABILITIES.map((ability) => <SelectItem key={ability.id} value={ability.id}>{ability.label}</SelectItem>)}</SelectContent></Select></label>
                 <div className="space-y-2"><span className="text-[10px] uppercase tracking-widest text-amber-300/70">Training</span><div className="flex h-10 items-center rounded-md border border-amber-300/15 bg-black/30 px-3 text-sm text-amber-100">Permanently proficient</div></div>

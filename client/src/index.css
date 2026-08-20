@@ -94,6 +94,7 @@
 
   .character-accent-scope {
     --character-accent: #b45353;
+    --character-accent-secondary: var(--character-accent);
   }
 
   .character-accent-text {
@@ -109,18 +110,21 @@
   }
 
   .character-accent-soft {
-    background-color: color-mix(in srgb, var(--character-accent) 10%, transparent);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--character-accent) 14%, transparent), color-mix(in srgb, var(--character-accent-secondary) 14%, transparent));
   }
 
   .character-accent-panel {
     border-color: color-mix(in srgb, var(--character-accent) 26%, transparent);
     background:
       radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--character-accent) 13%, transparent), transparent 62%),
-      linear-gradient(90deg, color-mix(in srgb, var(--character-accent) 9%, transparent), rgb(0 0 0 / 0.35), color-mix(in srgb, var(--character-accent) 6%, transparent));
+      linear-gradient(90deg, color-mix(in srgb, var(--character-accent) 9%, transparent), rgb(0 0 0 / 0.35), color-mix(in srgb, var(--character-accent-secondary) 9%, transparent));
   }
 
   .character-accent-glow {
-    box-shadow: 0 0 24px color-mix(in srgb, var(--character-accent) 13%, transparent);
+    box-shadow:
+      -8px 0 24px color-mix(in srgb, var(--character-accent) 13%, transparent),
+      8px 0 24px color-mix(in srgb, var(--character-accent-secondary) 13%, transparent);
   }
 
   .character-accent-button {
@@ -186,9 +190,9 @@
   .character-custom-scope :is(
     [class*="to-amber-"], [class*="to-red-"], [class*="to-orange-"],
     [class*="to-yellow-"], [class*="to-fuchsia-"], [class*="to-emerald-"],
-    [class*="to-primary"]
+    [class*="to-primary"], [class*="to-black"]
   ) {
-    --tw-gradient-to: color-mix(in srgb, var(--character-accent) 5%, transparent) var(--tw-gradient-to-position) !important;
+    --tw-gradient-to: color-mix(in srgb, var(--character-accent-secondary) 20%, transparent) var(--tw-gradient-to-position) !important;
   }
 
   .character-custom-scope .text-glow {
@@ -196,7 +200,7 @@
   }
 
   .character-custom-scope [class*="shadow-[0_0"] {
-    box-shadow: 0 0 24px color-mix(in srgb, var(--character-accent) 14%, transparent) !important;
+    box-shadow: 0 0 24px color-mix(in srgb, var(--character-accent-secondary) 18%, transparent) !important;
   }
 
   @keyframes shake {

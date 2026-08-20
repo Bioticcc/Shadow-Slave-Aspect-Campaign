@@ -8,11 +8,13 @@ export function ReforgingPopup({
   children,
   onChangeCount,
   accentColor = "#b45353",
+  accentSecondaryColor = accentColor,
 }: {
   trait: Trait;
   children: React.ReactNode;
   onChangeCount?: (monsterIndex: number, delta: number) => void;
   accentColor?: string;
+  accentSecondaryColor?: string;
 }) {
   const tracker = trait.reforging;
   if (!tracker) return <>{children}</>;
@@ -22,11 +24,11 @@ export function ReforgingPopup({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         className="character-custom-scope character-accent-glow glass-panel border-red-500/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={{ "--character-accent": accentColor, "--character-accent-secondary": accentSecondaryColor } as React.CSSProperties}
       >
         <DialogHeader className="pb-4">
           <DialogTitle className="font-display text-2xl text-red-300 text-glow flex items-center gap-2">
-            <Flame className="w-5 h-5 text-orange-400" /> {trait.name}
+            <Flame className="character-accent-text w-5 h-5" /> {trait.name}
           </DialogTitle>
           {trait.effect && trait.effect.trim() !== "?" && <p className="text-foreground pt-2 whitespace-pre-wrap">{trait.effect}</p>}
           {trait.description && <p className="text-sm text-muted-foreground italic whitespace-pre-wrap">{trait.description}</p>}

@@ -17,18 +17,18 @@ function HiddenText({ children, hidden }: { children: React.ReactNode; hidden: b
   );
 }
 
-export function RememberedByPopup({ trait, children, accentColor = "#b45353" }: { trait: Trait; children: React.ReactNode; accentColor?: string }) {
+export function RememberedByPopup({ trait, children, accentColor = "#b45353", accentSecondaryColor = accentColor }: { trait: Trait; children: React.ReactNode; accentColor?: string; accentSecondaryColor?: string }) {
   const people = trait.rememberedBy || [];
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         className="character-custom-scope character-accent-glow glass-panel border-fuchsia-400/30 w-[min(92vw,63rem)] max-w-[63rem] h-[min(85vh,40rem)] overflow-hidden gap-0 grid-rows-[auto_minmax(0,1fr)]"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={{ "--character-accent": accentColor, "--character-accent-secondary": accentSecondaryColor } as React.CSSProperties}
       >
         <DialogHeader className="pb-4">
           <DialogTitle className="font-display text-2xl text-fuchsia-300 text-glow flex items-center gap-2">
-            <Fingerprint className="w-5 h-5" /> {trait.name}
+            <Fingerprint className="character-accent-text w-5 h-5" /> {trait.name}
           </DialogTitle>
           {trait.effect && <p className="text-foreground pt-2 whitespace-pre-wrap">{trait.effect}</p>}
           {trait.description && <p className="text-sm text-muted-foreground italic whitespace-pre-wrap">{trait.description}</p>}

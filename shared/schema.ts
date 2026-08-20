@@ -80,6 +80,8 @@ export const ARMOR_DEXTERITY_BONUS_MODES = ["full", "half", "none"] as const;
 export type ArmorDexterityBonusMode = typeof ARMOR_DEXTERITY_BONUS_MODES[number];
 
 export type WeaponDamage = {
+  attackStat?: StatKey;
+  statModifierManaged?: boolean;
   hitModifier: number;
   damageDie: string;
   diceCount: number;
@@ -128,6 +130,32 @@ export type Echo = {
   isSummoned: boolean;
 };
 
+export type SheetCounterTarget = "attribute" | "memory" | "echo";
+
+export type SheetCounter = {
+  id: string;
+  targetType: SheetCounterTarget;
+  targetIndex: number;
+  value: number;
+};
+
+export function normalizeSheetCounters(value: unknown): SheetCounter[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") return [];
+    const raw = item as Partial<SheetCounter>;
+    if (raw.targetType !== "attribute" && raw.targetType !== "memory" && raw.targetType !== "echo") return [];
+    const targetIndex = Number.isFinite(Number(raw.targetIndex)) ? Math.max(0, Math.floor(Number(raw.targetIndex))) : 0;
+    const counterValue = Number.isFinite(Number(raw.value)) ? Math.floor(Number(raw.value)) : 0;
+    return [{
+      id: typeof raw.id === "string" && raw.id ? raw.id : `counter-${index}`,
+      targetType: raw.targetType,
+      targetIndex,
+      value: counterValue,
+    }];
+  });
+}
+
 export const MEMORY_TYPES: MemoryType[] = ["armor", "weapon", "tool", "charm"];
 
 export type CharacterStats = {
@@ -137,6 +165,28 @@ export type CharacterStats = {
   intelligence: number;
   wisdom: number;
   charisma: number;
+};
+
+export const STAT_KEYS = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"] as const;
+export type StatKey = typeof STAT_KEYS[number];
+export type StatTrainingLevel = "proficient" | "expertise";
+export type StatAllocationRecord = {
+  milestone: number;
+  stat: StatKey;
+  amount: number;
+  className: string;
+};
+export type StatProgression = {
+  processedMilestones: number;
+  allocationClass?: string;
+  milestoneVersion?: number;
+  allocationHistory?: StatAllocationRecord[];
+  training: Partial<Record<StatKey, StatTrainingLevel>>;
+  saveProficiencies?: Partial<Record<StatKey, boolean>>;
+  checkProficiencies?: Record<string, boolean>;
+  physicalChoice?: StatKey;
+  mentalChoice?: StatKey;
+  titanApplied: boolean;
 };
 
 export const DEFAULT_STATS: CharacterStats = {
@@ -158,6 +208,16 @@ export const CLASS_TIERS = [
   { name: "Titan", maxFragments: 7000 },
 ] as const;
 
+export const CLASS_PROGRESSION_DESCRIPTIONS: Record<string, string> = {
+  Beast: "Every 100 cumulative fragments grants +1 to any stat.",
+  Monster: "You feel stronger. Every 100 fragments grants +1 to a highest stat, or +2 to a stat at least 5 below it. Choose a physical stat for proficiency; existing proficiency becomes expertise.",
+  Demon: "Every 100 fragments grants +2 to any stat. Choose a mental stat for proficiency; existing proficiency becomes expertise.",
+  Devil: "Every 100 fragments grants +2 to any stat, or +3 to one of your two lowest stats.",
+  Tyrant: "Every 100 fragments grants +3 to any stat.",
+  Terror: "Every 100 fragments grants +4 to any stat.",
+  Titan: "At 7,000 cumulative fragments, every stat automatically increases by 5.",
+};
+
 export function getClassTierIndex(className: string): number {
   const idx = CLASS_TIERS.findIndex(t => t.name === className);
   return idx >= 0 ? idx : 0;
@@ -168,12 +228,36 @@ export function getMaxFragmentsForClass(className: string): number {
   return tier ? tier.maxFragments : 1000;
 }
 
+export function getClassForFragments(fragments: number): string {
+  const value = Math.max(0, fragments || 0);
+  if (value >= 21000) return "Titan";
+  if (value >= 15000) return "Terror";
+  if (value >= 10000) return "Tyrant";
+  if (value >= 6000) return "Devil";
+  if (value >= 3000) return "Demon";
+  if (value >= 1000) return "Monster";
+  return "Beast";
+}
+
+export function getCumulativeFragmentsForProgress(currentClass: string, currentFragments: number): number {
+  const tierIndex = getClassTierIndex(currentClass);
+  const completedClassFragments = CLASS_TIERS
+    .slice(0, tierIndex)
+    .reduce((total, tier) => total + tier.maxFragments, 0);
+  const currentMaximum = CLASS_TIERS[tierIndex]?.maxFragments ?? 1000;
+  return completedClassFragments + Math.max(0, Math.min(currentFragments || 0, currentMaximum));
+}
+
 export function getEssenceMax(totalSoulFragments: number): number {
   return 10 + Math.floor(totalSoulFragments / 100) * 10;
 }
 
-export function getProficiencyBonus(totalSoulFragments: number): number {
-  const shards = Math.max(0, totalSoulFragments || 0);
+export function getEssenceMaxForProgress(currentClass: string, currentFragments: number): number {
+  return getEssenceMax(getCumulativeFragmentsForProgress(currentClass, currentFragments));
+}
+
+export function getProficiencyBonus(currentFragments: number): number {
+  const shards = Math.max(0, currentFragments || 0);
   if (shards >= 7000) return 12;
   if (shards >= 6000) return 11;
   if (shards >= 5300) return 10;
@@ -187,36 +271,159 @@ export function getProficiencyBonus(totalSoulFragments: number): number {
   return 2;
 }
 
-export function computeClassUp(currentClass: string, currentFragments: number, totalSoulFragments: number): {
+export function computeClassUp(currentClass: string, currentFragments: number, _totalSoulFragments?: number): {
   newClass: string;
   newFragments: number;
   newTotalFragments: number;
   newMaxEssence: number;
   classedUp: boolean;
 } {
-  const max = getMaxFragmentsForClass(currentClass);
-  const tierIdx = getClassTierIndex(currentClass);
-  const isMaxTier = tierIdx >= CLASS_TIERS.length - 1;
+  const currentTierIndex = getClassTierIndex(currentClass);
+  const currentMaximum = CLASS_TIERS[currentTierIndex]?.maxFragments ?? 1000;
+  const canClassUp = currentTierIndex < CLASS_TIERS.length - 1;
+  const classedUp = canClassUp && currentFragments >= currentMaximum;
+  const newClass = classedUp ? CLASS_TIERS[currentTierIndex + 1].name : currentClass;
+  const newFragments = classedUp ? 0 : Math.max(0, Math.min(currentFragments, currentMaximum));
+  const newTotalFragments = getCumulativeFragmentsForProgress(newClass, newFragments);
+  return {
+    newClass,
+    newFragments,
+    newTotalFragments,
+    newMaxEssence: getEssenceMaxForProgress(newClass, newFragments),
+    classedUp,
+  };
+}
 
-  if (currentFragments >= max && !isMaxTier) {
-    const nextTierIdx = tierIdx + 1;
-    const newClass = CLASS_TIERS[nextTierIdx].name;
-    return {
-      newClass,
-      newFragments: 0,
-      newTotalFragments: totalSoulFragments,
-      newMaxEssence: getEssenceMax(totalSoulFragments),
-      classedUp: true,
-    };
+export function normalizeStatProgression(value: unknown, currentFragments: number, currentClass = "Beast"): StatProgression {
+  const raw = value && typeof value === "object" ? value as Partial<StatProgression> : null;
+  const availableMilestones = currentClass === "Titan" ? 0 : Math.floor(Math.max(0, currentFragments) / 100);
+  const savedProgression = !!raw
+    && typeof raw.processedMilestones === "number"
+    && typeof raw.allocationClass === "string"
+    && (raw.milestoneVersion === 2 || raw.milestoneVersion === 3);
+  const trainingRaw = raw?.training && typeof raw.training === "object" ? raw.training : {};
+  const training: Partial<Record<StatKey, StatTrainingLevel>> = {};
+  for (const key of STAT_KEYS) {
+    const level = trainingRaw[key];
+    if (level === "proficient" || level === "expertise") training[key] = level;
+  }
+  const saveProficienciesRaw = raw?.saveProficiencies && typeof raw.saveProficiencies === "object" ? raw.saveProficiencies : {};
+  const saveProficiencies: Partial<Record<StatKey, boolean>> = {};
+  for (const key of STAT_KEYS) {
+    if (saveProficienciesRaw[key] === true) saveProficiencies[key] = true;
+  }
+  const checkProficienciesRaw = raw?.checkProficiencies && typeof raw.checkProficiencies === "object" ? raw.checkProficiencies : {};
+  const checkProficiencies: Record<string, boolean> = {};
+  for (const [key, proficient] of Object.entries(checkProficienciesRaw)) {
+    if (proficient === true) checkProficiencies[key] = true;
+  }
+  const allocationHistory = Array.isArray(raw?.allocationHistory)
+    ? raw.allocationHistory.filter((record): record is StatAllocationRecord => {
+      if (!record || typeof record !== "object") return false;
+      const candidate = record as Partial<StatAllocationRecord>;
+      return typeof candidate.milestone === "number"
+        && STAT_KEYS.includes(candidate.stat as StatKey)
+        && typeof candidate.amount === "number"
+        && typeof candidate.className === "string";
+    }).map((record) => ({
+      milestone: Math.max(1, Math.floor(record.milestone)),
+      stat: record.stat,
+      amount: Math.max(0, Math.floor(record.amount)),
+      className: record.className,
+    }))
+    : [];
+  return {
+    processedMilestones: savedProgression && raw!.allocationClass === currentClass
+      ? Math.min(availableMilestones, Math.max(0, Math.floor(raw!.processedMilestones!)))
+      : availableMilestones,
+    allocationClass: currentClass,
+    milestoneVersion: 3,
+    allocationHistory,
+    training,
+    saveProficiencies,
+    checkProficiencies,
+    physicalChoice: STAT_KEYS.includes(raw?.physicalChoice as StatKey) ? raw?.physicalChoice : undefined,
+    mentalChoice: STAT_KEYS.includes(raw?.mentalChoice as StatKey) ? raw?.mentalChoice : undefined,
+    titanApplied: typeof raw?.titanApplied === "boolean" ? raw.titanApplied : false,
+  };
+}
+
+export function rollbackStatAllocations(
+  progression: StatProgression,
+  currentFragments: number,
+  currentClass: string,
+  stats: CharacterStats,
+): { progression: StatProgression; stats: CharacterStats } {
+  const availableMilestones = currentClass === "Titan" ? 0 : Math.floor(Math.max(0, currentFragments) / 100);
+  const nextStats = { ...stats };
+  const history = progression.allocationHistory || [];
+  const retainedHistory: StatAllocationRecord[] = [];
+
+  for (const record of history) {
+    if (record.className === currentClass && record.milestone > availableMilestones) {
+      nextStats[record.stat] -= record.amount;
+    } else {
+      retainedHistory.push(record);
+    }
   }
 
   return {
-    newClass: currentClass,
-    newFragments: isMaxTier ? Math.min(currentFragments, max) : currentFragments,
-    newTotalFragments: totalSoulFragments,
-    newMaxEssence: getEssenceMax(totalSoulFragments),
-    classedUp: false,
+    stats: nextStats,
+    progression: {
+      ...progression,
+      processedMilestones: Math.min(progression.processedMilestones, availableMilestones),
+      allocationHistory: retainedHistory,
+    },
   };
+}
+
+export type StatAllocation = { milestone: number; options: Partial<Record<StatKey, number>>; label: string };
+
+export function getNextStatAllocation(progression: StatProgression, currentFragments: number, currentClass: string, stats: CharacterStats): StatAllocation | null {
+  if (currentClass === "Titan") return null;
+  const available = Math.floor(Math.max(0, currentFragments) / 100);
+  const milestone = progression.processedMilestones + 1;
+  if (milestone > available) return null;
+  const options: Partial<Record<StatKey, number>> = {};
+  if (currentClass === "Beast") {
+    for (const key of STAT_KEYS) options[key] = 1;
+    return { milestone, options, label: "+1 to any stat" };
+  }
+  if (currentClass === "Monster") {
+    const highest = Math.max(...STAT_KEYS.map((key) => stats[key]));
+    for (const key of STAT_KEYS) {
+      if (stats[key] === highest) options[key] = 1;
+      else if (highest - stats[key] >= 5) options[key] = 2;
+    }
+    return { milestone, options, label: "+1 to highest, or +2 if 5 below highest" };
+  }
+  if (currentClass === "Demon") {
+    for (const key of STAT_KEYS) options[key] = 2;
+    return { milestone, options, label: "+2 to any stat" };
+  }
+  if (currentClass === "Devil") {
+    const ordered = STAT_KEYS.map((key, index) => ({ key, index, value: stats[key] }))
+      .sort((a, b) => a.value - b.value || a.index - b.index);
+    const lowestTwo = new Set(ordered.slice(0, 2).map(({ key }) => key));
+    for (const key of STAT_KEYS) options[key] = lowestTwo.has(key) ? 3 : 2;
+    return { milestone, options, label: "+2 to any stat, or +3 to lowest" };
+  }
+  if (currentClass === "Tyrant") {
+    for (const key of STAT_KEYS) options[key] = 3;
+    return { milestone, options, label: "+3 to any stat" };
+  }
+  for (const key of STAT_KEYS) options[key] = 4;
+  return { milestone, options, label: "+4 to any stat" };
+}
+
+export function getPendingStatAllocationCount(progression: StatProgression, currentFragments: number, currentClass: string): number {
+  if (currentClass === "Titan") return 0;
+  return Math.max(0, Math.floor(Math.max(0, currentFragments) / 100) - progression.processedMilestones);
+}
+
+export function getStatTrainingBonus(progression: StatProgression, stat: StatKey, proficiencyBonus: number): number {
+  const level = progression.training[stat];
+  return level === "expertise" ? proficiencyBonus * 2 : level === "proficient" ? proficiencyBonus : 0;
 }
 
 export const characters = pgTable("characters", {
@@ -238,6 +445,7 @@ export const characters = pgTable("characters", {
   totalSoulFragments: integer("total_soul_fragments").notNull().default(0),
   memories: json("memories").$type<Memory[]>().notNull().default([]),
   stats: json("stats").$type<CharacterStats>().notNull().default(DEFAULT_STATS),
+  statProgression: json("stat_progression").$type<StatProgression>().notNull().default({} as StatProgression),
   echoes: text("echoes").notNull().default(""),
   inventoryNotes: text("inventory_notes").notNull().default(""),
   attributes: json("attributes").$type<Trait[]>().notNull().default([]),
@@ -246,6 +454,7 @@ export const characters = pgTable("characters", {
   aspectAbilities: json("aspect_abilities").$type<Trait[]>().notNull().default([]),
   aspectAbilityDescription: text("aspect_ability_description").notNull().default(""),
   flaw: json("flaw").$type<Trait>().notNull().default({ name: "", description: "", effect: "" }),
+  sheetCounters: json("sheet_counters").$type<SheetCounter[]>().notNull().default([]),
   isActive: integer("is_active").notNull().default(1),
   owner: text("owner").notNull().default("DM"),
 });
@@ -359,20 +568,42 @@ export function normalizeMemory(m: any, proficiencyBonus = 2): Memory {
   }
   if (mem.isDamageDealing) {
     const savedHitModifier = typeof m.weaponDamage?.hitModifier === "number" ? m.weaponDamage.hitModifier : 0;
+    const isManagedWeapon = memoryType === "weapon" && m.weaponDamage?.statModifierManaged === true;
     // Every legacy weapon was authored while the campaign-wide bonus was +2.
     // Cap the migration there so an unmigrated weapon still improves if its
     // owner crosses a proficiency threshold before the memory is next saved.
-    const legacyProficiency = memoryType === "weapon" && !hasSavedProficiency && isProficient
+    const legacyProficiency = memoryType === "weapon" && !isManagedWeapon && !hasSavedProficiency && isProficient
       ? Math.min(2, Math.max(0, proficiencyBonus))
       : 0;
     mem.weaponDamage = m.weaponDamage ? {
-      hitModifier: savedHitModifier - legacyProficiency,
+      attackStat: memoryType === "weapon" && STAT_KEYS.includes(m.weaponDamage.attackStat as StatKey)
+        ? m.weaponDamage.attackStat as StatKey
+        : "dexterity",
+      statModifierManaged: memoryType === "weapon" ? true : undefined,
+      hitModifier: memoryType === "weapon" && !isManagedWeapon ? 0 : savedHitModifier - legacyProficiency,
       damageDie: DAMAGE_DICE.includes(m.weaponDamage.damageDie) ? m.weaponDamage.damageDie : "D6",
       diceCount: typeof m.weaponDamage.diceCount === "number" ? m.weaponDamage.diceCount : 1,
-      damageModifier: typeof m.weaponDamage.damageModifier === "number" ? m.weaponDamage.damageModifier : 0,
-    } : { hitModifier: 0, damageDie: "D6", diceCount: 1, damageModifier: 0 };
+      damageModifier: memoryType === "weapon" && !isManagedWeapon
+        ? 0
+        : typeof m.weaponDamage.damageModifier === "number" ? m.weaponDamage.damageModifier : 0,
+    } : { attackStat: "dexterity", statModifierManaged: memoryType === "weapon" ? true : undefined, hitModifier: 0, damageDie: "D6", diceCount: 1, damageModifier: 0 };
   }
   return mem;
+}
+
+export function getWeaponAttackStat(memory: Memory): StatKey {
+  const attackStat = memory.weaponDamage?.attackStat;
+  return STAT_KEYS.includes(attackStat as StatKey) ? attackStat as StatKey : "dexterity";
+}
+
+export function getWeaponHitModifier(memory: Memory, stats: CharacterStats): number {
+  const manualAdjustment = memory.weaponDamage?.hitModifier ?? 0;
+  return memory.memoryType === "weapon" ? stats[getWeaponAttackStat(memory)] + manualAdjustment : manualAdjustment;
+}
+
+export function getWeaponDamageModifier(memory: Memory, stats: CharacterStats): number {
+  const manualAdjustment = memory.weaponDamage?.damageModifier ?? 0;
+  return memory.memoryType === "weapon" ? stats[getWeaponAttackStat(memory)] + manualAdjustment : manualAdjustment;
 }
 
 export function getEffectiveMemoryArmorClass(memory: Memory): number {

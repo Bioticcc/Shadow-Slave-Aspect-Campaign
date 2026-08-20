@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { sendWsMessage } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth";
 import { type Echo, DAMAGE_DICE, MEMORY_CORES, MEMORY_TIERS, WS_EVENTS, type DiceRollPayload } from "@shared/schema";
-import { Crosshair, Flame, Plus, Save, X } from "lucide-react";
+import { Crosshair, Flame, Plus, Trash2, X } from "lucide-react";
 
 interface EchoPopupProps {
   echo: Echo;
@@ -32,7 +32,6 @@ interface EchoPopupProps {
   onSave?: (echo: Echo) => void;
   onDelete?: () => void;
   startInEditMode?: boolean;
-  accentColor?: string;
 }
 
 const createEmptyMove = () => ({
@@ -44,7 +43,7 @@ const createEmptyMove = () => ({
   damageModifier: 0,
 });
 
-export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, startInEditMode = false, accentColor = "#b45353" }: EchoPopupProps) {
+export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, startInEditMode = false }: EchoPopupProps) {
   const { currentUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -91,7 +90,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
     setIsAddingMove(false);
   };
 
-  const handleSave = () => {
+  const commitDraft = () => {
     const maxHealth = Math.max(1, draft.maxHealth || 1);
     const nextEcho: Echo = {
       ...draft,
@@ -104,8 +103,12 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
     };
     onSave?.(nextEcho);
     setDraft(nextEcho);
-    setIsEditing(false);
     setIsAddingMove(false);
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isEditing) commitDraft();
+    setOpen(nextOpen);
   };
 
   const parseDieSides = (die: string): number => parseInt(die.replace("D", ""), 10) || 6;
@@ -169,23 +172,23 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
       <DialogContent
-        className="character-custom-scope character-accent-border character-accent-glow glass-panel w-[min(95vw,56rem)] max-w-[56rem] h-[min(90vh,44rem)] overflow-hidden p-0"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        className="character-custom-scope character-accent-border glass-panel h-[min(90vh,44rem)] w-[min(95vw,56rem)] max-w-[56rem] overflow-hidden p-0"
+        style={{ "--character-accent": "hsl(var(--primary))" } as React.CSSProperties}
       >
         <div className="flex h-full min-h-0 flex-col">
           <DialogHeader className="px-6 pt-6 pb-3 border-b border-white/10">
             <div className="flex items-center justify-between gap-4 pr-12">
-              <DialogTitle className="character-accent-text font-display text-2xl text-glow flex items-center gap-3">
+              <DialogTitle className="character-accent-text flex items-center gap-3 font-display text-2xl">
                 {isEditing ? (
                   <Input
                     value={draft.name}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                    className="character-accent-border h-9 bg-black/50 w-[280px]"
+                    className="h-9 w-[280px] border-primary/25 bg-black/50"
                     placeholder="Echo Name"
                   />
                 ) : (
@@ -193,19 +196,15 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                 )}
               </DialogTitle>
 
-              {canEdit && isEditing && (
+              {canEdit && isEditing && onDelete && (
                 <div className="flex items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     className="border-destructive/50 text-destructive hover:bg-destructive/10"
                     onClick={() => setIsDeleteDialogOpen(true)}
-                    disabled={!onDelete}
                   >
-                    Delete Echo
-                  </Button>
-                  <Button onClick={handleSave} className="character-accent-button">
-                    <Save className="w-4 h-4 mr-2" /> Save Echo
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete Echo
                   </Button>
                 </div>
               )}
@@ -213,8 +212,8 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4 space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-            <div className="rounded-lg border border-white/20 bg-white/5 p-2 space-y-1">
+            <div className="grid grid-cols-2 gap-y-4 rounded-xl border border-white/10 bg-gradient-to-r from-white/[0.07] to-transparent p-4 md:grid-cols-7">
+            <div className="space-y-1 border-l border-white/10 px-3 first:border-l-0 first:pl-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Core</p>
               {isEditing ? (
                 <Select
@@ -234,7 +233,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                 <p className="text-sm font-bold text-foreground">{draft.core}</p>
               )}
             </div>
-            <div className="rounded-lg border border-white/20 bg-white/5 p-2 space-y-1">
+            <div className="space-y-1 border-l border-white/10 px-3">
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tier</p>
               {isEditing ? (
                 <Select
@@ -257,7 +256,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                 <p className="text-sm font-bold text-foreground">{draft.tier}</p>
               )}
             </div>
-            <div className="character-accent-border character-accent-soft rounded-lg border p-2 space-y-1">
+            <div className="space-y-1 border-l border-white/10 px-3">
               <p className="character-accent-text text-[10px] font-bold uppercase tracking-widest">AC</p>
               {isEditing ? (
                 <Input
@@ -271,7 +270,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                 <p className="character-accent-text text-sm font-bold">{draft.armorClass}</p>
               )}
             </div>
-            <div className="character-accent-border character-accent-soft rounded-lg border p-2 space-y-1">
+            <div className="space-y-1 border-l border-white/10 px-3">
               <p className="character-accent-text text-[10px] font-bold uppercase tracking-widest">Max HP</p>
               {isEditing ? (
                 <Input
@@ -289,7 +288,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                 <p className="character-accent-text text-sm font-bold">{draft.maxHealth}</p>
               )}
             </div>
-            <div className="character-accent-border character-accent-soft rounded-lg border p-2 space-y-1">
+            <div className="space-y-1 border-l border-white/10 px-3">
               <p className="character-accent-text text-[10px] font-bold uppercase tracking-widest">Current HP</p>
               {isEditing ? (
                 <Input
@@ -307,32 +306,32 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                 <p className="character-accent-text text-sm font-bold">{draft.currentHealth}</p>
               )}
             </div>
-            <div className="character-accent-border character-accent-soft rounded-lg border p-2 space-y-1">
-              <p className="character-accent-text text-[10px] font-bold uppercase tracking-widest">Heal Rate</p>
+            <div className="space-y-1 border-l border-white/10 px-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Heal Rate</p>
               {isEditing ? (
                 <Input
                   type="number"
                   min={0}
                   value={draft.healRate}
                   onChange={(e) => setDraft({ ...draft, healRate: Math.max(0, parseInt(e.target.value) || 0) })}
-                  className="character-accent-border h-8 bg-black/50 text-center"
+                  className="h-8 border-white/10 bg-black/50 text-center"
                 />
               ) : (
-                <p className="character-accent-text text-sm font-bold">{draft.healRate}</p>
+                <p className="text-sm font-bold text-foreground">{draft.healRate}</p>
               )}
             </div>
-            <div className="character-accent-border character-accent-soft rounded-lg border p-2 space-y-1">
-              <p className="character-accent-text text-[10px] font-bold uppercase tracking-widest">Summon Cost</p>
+            <div className="space-y-1 border-l border-white/10 px-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/80">Summon Cost</p>
               {isEditing ? (
                 <Input
                   type="number"
                   min={0}
                   value={draft.summonCost}
                   onChange={(e) => setDraft({ ...draft, summonCost: Math.max(0, parseInt(e.target.value) || 0) })}
-                  className="character-accent-border h-8 bg-black/50 text-center"
+                  className="h-8 border-primary/20 bg-black/50 text-center"
                 />
               ) : (
-                <p className="character-accent-text text-sm font-bold">{draft.summonCost}</p>
+                <p className="text-sm font-bold text-primary">{draft.summonCost}</p>
               )}
             </div>
           </div>
@@ -346,13 +345,13 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
             </div>
           )}
 
-          <div className="character-accent-border character-accent-soft border p-4 rounded-lg">
-            <h5 className="character-accent-muted text-xs font-bold uppercase tracking-widest mb-2">Description</h5>
+          <div className="rounded-lg border border-white/10 p-4">
+            <h5 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Description</h5>
             {isEditing ? (
               <Textarea
                 value={draft.description}
                 onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                className="bg-black/50 min-h-[90px]"
+                className="bg-black/50 min-h-[220px] resize-y"
                 placeholder="Echo description"
               />
             ) : (
@@ -370,7 +369,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="character-accent-button h-7"
+                  className="h-7 border-primary/30 text-primary hover:bg-primary/10"
                   onClick={() => setIsAddingMove((prev) => !prev)}
                 >
                   {isAddingMove ? (
@@ -387,7 +386,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
             </div>
 
             {isEditing && isAddingMove && (
-              <div className="character-accent-border rounded-lg border bg-black/30 p-3 space-y-2">
+              <div className="space-y-2 rounded-lg border border-white/10 bg-black/30 p-3">
                 <Input
                   placeholder="Move Name"
                   value={newMove.name}
@@ -453,7 +452,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                   type="button"
                   onClick={handleAddMove}
                   disabled={!newMove.name.trim()}
-                  className="character-accent-button w-full"
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   Confirm Add Move
                 </Button>
@@ -585,7 +584,7 @@ export function EchoPopup({ echo, children, canEdit = false, onSave, onDelete, s
                                         {lastMoveRoll.type === "hit" ? "Hit Roll" : "Damage Roll"}
                                       </span>
                                       <p className="text-sm text-foreground mt-1">{lastMoveRoll.result}</p>
-                                      <p className="character-accent-text text-xl font-display font-bold mt-1">
+                                      <p className="character-accent-text mt-1 font-display text-xl font-bold">
                                         = {lastMoveRoll.total}
                                       </p>
                                     </div>

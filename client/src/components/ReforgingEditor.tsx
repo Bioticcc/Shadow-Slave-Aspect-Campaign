@@ -14,7 +14,7 @@ function optionalPositiveNumber(value: string): number | null {
   return Number.isNaN(parsed) ? null : Math.max(0, parsed);
 }
 
-export function ReforgingEditor({ trait, onChange, accentColor = "#b45353" }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string }) {
+export function ReforgingEditor({ trait, onChange, accentColor = "#b45353", accentSecondaryColor = accentColor }: { trait: Trait; onChange: (trait: Trait) => void; accentColor?: string; accentSecondaryColor?: string }) {
   const tracker = trait.reforging;
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<ReforgingMonster>(blankMonster());
@@ -30,7 +30,7 @@ export function ReforgingEditor({ trait, onChange, accentColor = "#b45353" }: { 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button type="button" className="w-full flex items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-left shadow-[0_0_18px_rgba(239,68,68,0.14)] transition-all hover:bg-red-500/15">
+        <button type="button" className="w-full flex items-center gap-3 rounded-lg border border-white/5 bg-secondary/30 p-3 text-left transition-all hover:border-white/10 hover:bg-secondary/50">
           <Flame className="h-4 w-4 shrink-0 text-orange-400" />
           <span className="min-w-0 flex-1">
             <span className="block font-medium text-red-200">{trait.name}</span>
@@ -40,13 +40,13 @@ export function ReforgingEditor({ trait, onChange, accentColor = "#b45353" }: { 
       </DialogTrigger>
       <DialogContent
         className="character-custom-scope character-accent-glow glass-panel border-red-500/35 w-[min(92vw,63rem)] max-w-[63rem] h-[min(88vh,44rem)] overflow-y-auto"
-        style={{ "--character-accent": accentColor } as React.CSSProperties}
+        style={{ "--character-accent": accentColor, "--character-accent-secondary": accentSecondaryColor } as React.CSSProperties}
       >
         <DialogHeader><DialogTitle className="font-display text-2xl text-red-300 text-glow">Edit {trait.name}</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-3">
           <Input value={trait.name} onChange={(event) => onChange({ ...trait, name: event.target.value })} placeholder="Name" className="bg-black/50 border-red-500/20" />
-          <Input value={trait.effect} onChange={(event) => onChange({ ...trait, effect: event.target.value })} placeholder="Effect" className="bg-black/50 border-red-500/20" />
-          <Textarea value={trait.description} onChange={(event) => onChange({ ...trait, description: event.target.value })} placeholder="Description" className="min-h-[90px] bg-black/50 border-red-500/20" />
+          <Textarea value={trait.effect} onChange={(event) => onChange({ ...trait, effect: event.target.value })} placeholder="Effect" className="min-h-[180px] resize-y bg-black/50 border-red-500/20" />
+          <Textarea value={trait.description} onChange={(event) => onChange({ ...trait, description: event.target.value })} placeholder="Description" className="min-h-[180px] resize-y bg-black/50 border-red-500/20" />
 
           <div className="grid grid-cols-1 gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4 md:grid-cols-[minmax(0,1fr)_11rem]">
             <div className="space-y-2">
